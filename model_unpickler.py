@@ -54,7 +54,13 @@ class ModelUnpickler(pickle.Unpickler):
                 print(f'load called dtype:{dataType} offset: {offset} size: {size}')
                 data = file.read(size)
                 assert len(data) == size
-                return np.frombuffer(data, dataType)
+                if dataType != np.dtype(np.uint16) and dataType != np.dtype(np.float32):
+                    raise "We encountered an array that is neither bfloat16 or float32.  You need to modify the code to handle this."
+                if np.dtype(np.float32) == dataType:
+                    int32_array = np.frombuffer(data, np.dtype(np.int32))
+                    uint16_array = (int32_array >> 16).astype(np.dtype(np.uint16))
+                    return uint16_array
+                return np.frombuffer(data, np.dtype(np.uint16))
         return TensorStorageLoader(load, filename, filenameStem, outFile, offsetDirectory)
 
     @staticmethod

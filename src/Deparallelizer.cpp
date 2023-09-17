@@ -7,6 +7,8 @@
 #include<string>
 #include<unordered_map>
 
+#include<Common.h>
+
 using namespace std;
 
 // TODO: optionally convert bfloat16 to fp32 and use 512 bit leading dimension
@@ -14,8 +16,9 @@ using namespace std;
 
 map<string, uint64_t> readTensorOffsetTable(ifstream & ifs) {
     uint64_t tensorOffsetTablePos;
+    ifs.seekg(0);
     ifs.read((char*)&tensorOffsetTablePos, 8);
-    ifs.seekg(tensorOffsetTablePos, ios::beg);
+    ifs.seekg(tensorOffsetTablePos);
     int numTensors;
     ifs.read((char*)&numTensors, 4);
     map<string, uint64_t> ret;
@@ -76,17 +79,17 @@ struct Fp32 {
         this->x = t;
         return *this;
     }
-};
 
-struct TensorFileInfo {
-    uint64_t offset;
-    int numRows;
-    int numColumns;
-    int leadingDimension;
+    ostream & printBinary(ostream & os) {
+        for(int i = 31; i >= 0; --i) {
+            os << (this->i & (1<<i) ? 1 : 0);
+        }
+        return os;
+    }
 };
 
 template<typename T>
-pair<string, TensorFileInfo> consolidateTensorFragments(map<string, uint64_t> const & friends,
+pair<string, TensorFileInfo> consolidateTensorFragments(map<string, uint64_t> const & fragments,
                                 ParallelizationLayout parallelizationLayout,
                                 OutputFormat outputFormat,
                                 ifstream & ifs, ofstream & ofs) {
@@ -95,8 +98,8 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, uint64_t> co
     int numColumns = 0;
     int largestSplitDim = 0;
     //Inspect all the tensor dimensions to determine the consolidated numRows/numColumns
-    for(auto & p : friends) {
-        ifs.seekg(p.second, ios::beg);
+    for(auto & p : fragments) {
+        ifs.seekg(p.second);
         int rows, cols;
         ifs.read((char*) &rows, 4);
         ifs.read((char*) &cols, 4);
@@ -128,8 +131,8 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, uint64_t> co
     vector<uint16_t> tmp(largestSize);
     vector<T> storage(leadingDim * numColumns);
     int offset = 0;
-    for(auto & p : friends) {
-        ifs.seekg(p.second, ios::beg);
+    for(auto & p : fragments) {
+        ifs.seekg(p.second);
         int rows, cols;
         ifs.read((char *) &rows, 4);
         ifs.read((char *) &cols, 4);
@@ -150,7 +153,7 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, uint64_t> co
             offset += cols;
         }
     }
-    string tensorName = begin(friends)->first.substr(3);
+    string tensorName = begin(fragments)->first.substr(3);
     if (tensorName == "tok_embeddings.weight") {
         //transpose the token embedding matrix
         int newNumRows = numColumns;
@@ -178,29 +181,43 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, uint64_t> co
         swap(storage, newStorage);
     }
     ofs.write((char*)storage.data(), numColumns * leadingDim * sizeof(T));
-    cout << "Wrote consolidated tensor " << tensorName << "\n";
+    cout << "Wrote consolidated tensor " << tensorName << " rows: " << numRows <<
+        " cols: " << numColumns << " ld: " << leadingDim << "\n";
     return make_pair(tensorName, TensorFileInfo{position, numRows, numColumns, leadingDim});
 }
 
 template<typename T>
 pair<string, TensorFileInfo> writeNonParallelizedTensor(string const & tensorName,
+                                                  uint64_t tensorOffset,
+                                                  OutputFormat outputFormat,
                                                   ifstream & ifs,
                                                   ofstream & ofs) {
     uint64_t position = ofs.tellp();
     int rows, cols;
+    ifs.seekg(tensorOffset);
     ifs.read((char *) &rows, 4);
     ifs.read((char *) &cols, 4);
     vector<uint16_t> tmp(rows*cols);
     ifs.read((char *) tmp.data(), rows * cols * 2);
-    vector<T> storage(rows*cols);
+    int leadingDim = 0;
+    if (outputFormat == Fp32Aligned) {
+        leadingDim = findAlignment(rows, 64);
+    } else if (outputFormat == Cuda) {
+        leadingDim = rows;
+    } else {
+        cout << "Need to handle this outputFormat in consolidateTensorFragments\n";
+        exit(1);
+    }
+    vector<T> storage(leadingDim*cols);
     for(int j = 0; j < cols; ++j) {
         for(int i = 0; i < rows; ++i) {
-            storage[i + j*rows] = tmp[i + j*rows];
+            storage[i + j*leadingDim] = tmp[i + j*rows];
         }
     }
-    ofs.write((char*)storage.data(), rows*cols*sizeof(T));
+    ofs.write((char*)storage.data(), storage.size()*sizeof(T));
     string finalTensorName = tensorName.substr(3);
-    cout << "Wrote duplicated tensor " << finalTensorName << "\n";
+    cout << "Wrote duplicated tensor " << finalTensorName << " rows: " <<
+        rows << " cols: " << cols << " ld: " << rows << "\n";
     return make_pair(finalTensorName,
                      TensorFileInfo{position, rows, cols, rows});
 }
@@ -264,7 +281,10 @@ int main(int argc, char ** argv) {
     ifstream ifs(argv[1]);
     ofstream ofs("llama_model.bin");
     uint64_t dummy = 0;
-    ofs.write((char*)&dummy, 8);
+    for(int i = 0; i < 8; ++i) {
+        // The first of these is the position of a table and the other 7 are padding
+        ofs.write((char *) &dummy, 8);
+    }
     map<string, uint64_t> offsetTable = readTensorOffsetTable(ifs);
     list<pair<string, TensorFileInfo>> tensorInfoTable;
     list<string> tensorNames = getTensorNamesInOrder(offsetTable);
@@ -283,7 +303,8 @@ int main(int argc, char ** argv) {
             if (!isParallel) {
                 //Should be able to write this data and forget about parallel copies.  But do confirm that the parallel
                 //copies are identical or close.
-                auto offsetInfo = writeNonParallelizedTensor<Fp32>(tensorName, ifs, ofs);
+                auto offsetInfo = writeNonParallelizedTensor<Fp32>(tensorName, tensorOffset,
+                                                                   Fp32Aligned, ifs, ofs);
                 tensorInfoTable.push_back(std::move(offsetInfo));
             } else {
                 string tensorNameNoPrefix = tensorName.substr(3);
@@ -313,7 +334,7 @@ int main(int argc, char ** argv) {
         ofs.write((char*) &p.second.numColumns, 4);
         ofs.write((char*) &p.second.leadingDimension, 4);
     }
-    ofs.seekp(0, ios::beg);
+    ofs.seekp(0);
     ofs.write((char*) &tensorInfoTablePosition, 8);
     ofs.close();
     return 0;
