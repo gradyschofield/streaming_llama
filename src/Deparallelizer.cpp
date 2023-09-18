@@ -14,6 +14,7 @@
 using namespace std;
 using namespace Common;
 
+// TODO: read the params.json file to get n_heads, n_kv_heads and norm_eps
 // TODO: optionally convert bfloat16 to fp32 and use 512 bit leading dimension
 // TODO: add a new table (transformer block level) that gives the file offset and length of each transfer block, will be used with mmap
 
@@ -289,12 +290,26 @@ void writePad(ofstream & ofs) {
     }
 }
 
+void transferParamsToOutFile(ifstream & ifs, ofstream & ofs) {
+    ifs.seekg(8);
+    int n_heads = 0;
+    int n_kv_heads = 0;
+    float norm_eps = 0;
+    ifs.read((char*) &n_heads, 4);
+    ifs.read((char*) &n_kv_heads, 4);
+    ifs.read((char*) &norm_eps, 4);
+    ofs.write((char*) &n_heads, 4);
+    ofs.write((char*) &n_kv_heads, 4);
+    ofs.write((char*) &norm_eps, 4);
+}
+
 int main(int argc, char ** argv) {
     ifstream ifs(argv[1]);
     ofstream ofs("llama_model.bin");
     int64_t dummy = 0;
     ofs.write((char *) &dummy, 8);
     map<string, int64_t> offsetTable = readTensorOffsetTable(ifs);
+    transferParamsToOutFile(ifs, ofs);
     list<pair<string, TensorFileInfo>> tensorInfoTable;
     list<string> tensorNames = getTensorNamesInOrder(offsetTable);
     for(string const & tensorName : tensorNames) {

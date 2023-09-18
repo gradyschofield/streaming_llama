@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 from dataclasses import dataclass
 import glob
+import json
 import numpy as np
+import os
 import pickle
 import struct
 import sys
@@ -104,6 +106,15 @@ if __name__ == "__main__":
         print('USAGE: model_unpickler.py [model path]')
         sys.exit(1)
     basePath = sys.argv[1]
+    params = {}
+    if not os.path.exists(f'{basePath}/params.json'):
+        print("params.json not found in the base path.")
+        sys.exit(1)
+    with open(f'{basePath}/params.json', 'r') as paramsFile:
+        params = json.load(paramsFile)
+    n_heads = params["n_heads"]
+    n_kv_heads = n_heads if "n_kv_heads" not in params else params["n_kv_heads"]
+    norm_eps = params["norm_eps"]
     pthFileList = glob.glob(f'{basePath}/*.pth')
     pthFileList.sort()
     print('Reading files:')
@@ -115,6 +126,9 @@ if __name__ == "__main__":
     offsetDirectory = {}  #TODO: remove
     outFile = open(f'{basePath}/llama_model.pbin', 'wb')
     outFile.write(struct.pack('Q', 0))  # save space for the location of the tensor offset table
+    outFile.write(struct.pack('i', n_heads))
+    outFile.write(struct.pack('i', n_kv_heads))
+    outFile.write(struct.pack('f', norm_eps))
     tensorNameToOffset = []  #TODO: rename
     for fileIdx, zipFilePath in enumerate(pthFileList):
         with open(zipFilePath, 'rb') as zipFileHandle:

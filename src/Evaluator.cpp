@@ -11,7 +11,7 @@
 
 #include<Common.h>
 
-typedef float FloatType; // Hopefully we can change this for bfloat16 on MacOS Sanoma
+typedef float FloatType; // TODO can we change this for bfloat16 on MacOS Sanoma
 
 using namespace std;
 using namespace Common;
@@ -49,6 +49,73 @@ public:
 
     int getLeadingDimension() const {
         return leadingDimension;
+    }
+};
+
+class TransformerBlockScratch {
+    int freeIo = 0;
+    void * ioPtr[2];
+    void * inputCopyBuffer;
+    void * wQout;
+    void * wKout;
+    void * wVout;
+    void * wOout;
+    void * wOoutCopy;
+    void * qkOut;
+    void * vqkOut;
+    void * w1Out;
+    void * w2Out;
+    void * w3Out;
+
+public:
+    TransformerBlockScratch(int maxSequenceLength,
+                            int cacheSize,
+                            int numHeads,
+                            int embeddingLeadingDim,
+                            int qLeadingDim,
+                            int kLeadingDim,
+                            int vLeadingDim,
+                            int oLeadingDim,
+                            int w1LeadingDim,
+                            int w2LeadingDim,
+                            int w3LeadingDim) {
+        size_t totalAlloc = 0;
+        auto alignedAlloc = [&totalAlloc](void ** p, int alignment, size_t size) {
+            totalAlloc += size;
+            posix_memalign(p, alignment, size);
+        };
+        alignedAlloc((void**)&ioPtr[0], 64, embeddingLeadingDim * maxSequenceLength);
+        alignedAlloc((void**)&ioPtr[1], 64, embeddingLeadingDim * maxSequenceLength);
+        alignedAlloc((void**)&inputCopyBuffer, 64, embeddingLeadingDim * maxSequenceLength);
+
+        //TODO The heads within each matrix aren't aligned.  Does it even matter?  Some experimentation is needed.
+        alignedAlloc((void**)&wQout, 64, qLeadingDim * maxSequenceLength);
+        alignedAlloc((void**)&wKout, 64, kLeadingDim * (cacheSize + maxSequenceLength));
+        alignedAlloc((void**)&wVout, 64, vLeadingDim * (cacheSize + maxSequenceLength));
+        alignedAlloc((void**)&wOout, 64, oLeadingDim * maxSequenceLength);
+        alignedAlloc((void**)&wOoutCopy, 64, oLeadingDim * maxSequenceLength);
+
+        int qkRows = numHeads * maxSequenceLength;
+        int qkLeadingDim = findAlignment(qkRows, 64);
+        alignedAlloc((void**)&qkOut, 64, qkLeadingDim * (cacheSize + maxSequenceLength));
+        alignedAlloc((void**)&vqkOut, 64, vLeadingDim * maxSequenceLength);
+
+        alignedAlloc((void**)&w1Out, 64, w1LeadingDim * maxSequenceLength);
+        alignedAlloc((void**)&w2Out, 64, w2LeadingDim * maxSequenceLength);
+        alignedAlloc((void**)&w3Out, 64, w3LeadingDim * maxSequenceLength);
+        cout << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
+    }
+
+    template<typename T>
+    T * takeFreeIoPtr() {
+        void * out = ioPtr[freeIo];
+        freeIo = (freeIo + 1) % 2;
+        return (T*)out;
+    }
+
+    template<typename T>
+    T * getInputCopyBuffer() {
+        return (T*) inputCopyBuffer;
     }
 };
 
@@ -123,7 +190,9 @@ public:
         mapAddress = nullptr;
     }
 
-    void evaluate(void * p, int seqlen) {
+    template<typename T>
+    T * evaluate(T * p, int seqlen, shared_ptr<TransformerBlockScratch> transformerBlockScratch) {
+        T * out = transformerBlockScratch->takeFreeIoPtr<T>();
         /*
          * t0 = layerNorm(p) * attention_norm_weights
          * tQ = wQ * t0
@@ -142,6 +211,7 @@ public:
         cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
                     M, N, K, 1.0, a, K, b, K, 0.0, c, M);
                     */
+        return out;
     }
 };
 
@@ -215,65 +285,6 @@ public:
     }
 };
 
-class TransformerBlockScratch {
-    int freeIo = 0;
-    void * ioPtr[2];
-    void * inputCopyBuffer;
-    void * wQout;
-    void * wKout;
-    void * wVout;
-    void * wOout;
-    void * wOoutCopy;
-    void * qkOut;
-    void * vqkOut;
-    void * w1Out;
-    void * w2Out;
-    void * w3Out;
-
-public:
-    TransformerBlockScratch(int embeddingLeadingDim, int maxSequenceLength, int cacheSize,
-                            int qLeadingDim, int kLeadingDim, int vLeadingDim, int oLeadingDim,
-                            int numHeads, int w1LeadingDim, int w2LeadingDim, int w3LeadingDim) {
-        size_t totalAlloc = 0;
-        auto alignedAlloc = [&totalAlloc](void ** p, int alignment, size_t size) {
-            totalAlloc += size;
-            posix_memalign(p, alignment, size);
-        };
-        alignedAlloc((void**)&ioPtr[0], 64, embeddingLeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&ioPtr[1], 64, embeddingLeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&inputCopyBuffer, 64, embeddingLeadingDim * maxSequenceLength);
-
-        //TODO The heads within each matrix aren't aligned.  Does it even matter?  Some experimentation is needed.
-        alignedAlloc((void**)&wQout, 64, qLeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&wKout, 64, kLeadingDim * (cacheSize + maxSequenceLength));
-        alignedAlloc((void**)&wVout, 64, vLeadingDim * (cacheSize + maxSequenceLength));
-        alignedAlloc((void**)&wOout, 64, oLeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&wOoutCopy, 64, oLeadingDim * maxSequenceLength);
-
-        int qkRows = numHeads * maxSequenceLength;
-        int qkLeadingDim = findAlignment(qkRows, 64);
-        alignedAlloc((void**)&qkOut, 64, qkLeadingDim * (cacheSize + maxSequenceLength));
-        alignedAlloc((void**)&vqkOut, 64, vLeadingDim * maxSequenceLength);
-
-        alignedAlloc((void**)&w1Out, 64, w1LeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&w2Out, 64, w2LeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&w3Out, 64, w3LeadingDim * maxSequenceLength);
-        cout << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
-    }
-
-    template<typename T>
-    T * takeFreeIoPtr() {
-        void * out = ioPtr[freeIo];
-        freeIo = (freeIo + 1) % 2;
-        return (T*)out;
-    }
-
-    template<typename T>
-    T * getInputCopyBuffer() {
-        return (T*) inputCopyBuffer;
-    }
-};
-
 class LlamaModel {
     shared_ptr<NonTransformerWeights> nonTransformerWeights;
     vector<shared_ptr<TransformerBlock>> transformerBlocks;
@@ -287,13 +298,12 @@ public:
                int maxSequenceLength,
                int cacheSize) {
         transformerBlockScratch = make_shared<TransformerBlockScratch>(
+                maxSequenceLength, cacheSize, numHeads,
                 tensorFileInfo.at("tok_embeddings.weight").leadingDimension,
-                maxSequenceLength, cacheSize,
                 tensorFileInfo.at("layers.0.attention.wq.weight").leadingDimension,
                 tensorFileInfo.at("layers.0.attention.wk.weight").leadingDimension,
                 tensorFileInfo.at("layers.0.attention.wv.weight").leadingDimension,
                 tensorFileInfo.at("layers.0.attention.wo.weight").leadingDimension,
-                numHeads,
                 tensorFileInfo.at("layers.0.feed_forward.w1.weight").leadingDimension,
                 tensorFileInfo.at("layers.0.feed_forward.w2.weight").leadingDimension,
                 tensorFileInfo.at("layers.0.feed_forward.w3.weight").leadingDimension);
@@ -314,6 +324,10 @@ public:
         vector<FloatType> ret;
         FloatType * out = transformerBlockScratch->takeFreeIoPtr<FloatType>();
         nonTransformerWeights->getTokenEmbedding(tokens, out);
+        for(auto & transformerBlock : transformerBlocks) {
+            out = transformerBlock->evaluate(out, seqlen, transformerBlockScratch);
+        }
+        //TODO Do layer normalization and multiplication of output weights
         return ret;
     }
 
@@ -343,15 +357,30 @@ map<string, TensorFileInfo> readTensorFileInfoTable(ifstream & ifs) {
     return ret;
 }
 
+tuple<int, int, float> readParams(ifstream & ifs) {
+    ifs.seekg(8);
+    int numHeads = 0, numKvHeads = 0;
+    float normEps = 0;
+    ifs.read((char*) &numHeads, 4);
+    ifs.read((char*) &numKvHeads, 4);
+    ifs.read((char*) &normEps, 4);
+    cout << "numHeads: " << numHeads << "\n";
+    cout << "numKvHeads: " << numKvHeads << "\n";
+    cout << "normEps: " << normEps << "\n";
+    return tie(numHeads, numKvHeads, normEps);
+}
+
 int main(int argc, char ** argv) {
     string filename = "llama_model_7.bin";
-    int numHeads = 32;
     ifstream ifs(filename, ios::binary);
     if(ifs.fail()) {
         cout << "Could not load llama model.\n";
         return 1;
     }
     map<string, TensorFileInfo> tensorFileInfo = readTensorFileInfoTable(ifs);
+    int numHeads, numKvHeads;
+    float normEps;
+    tie(numHeads, numKvHeads, normEps) = readParams(ifs);
     ifs.close();
     int maxSequenceLength = 1;
     int cacheSize = 500;
