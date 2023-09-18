@@ -1,3 +1,5 @@
+#include<unistd.h>
+
 #include<fstream>
 #include<iostream>
 #include<list>
@@ -10,24 +12,25 @@
 #include<Common.h>
 
 using namespace std;
+using namespace Common;
 
 // TODO: optionally convert bfloat16 to fp32 and use 512 bit leading dimension
 // TODO: add a new table (transformer block level) that gives the file offset and length of each transfer block, will be used with mmap
 
-map<string, uint64_t> readTensorOffsetTable(ifstream & ifs) {
-    uint64_t tensorOffsetTablePos;
+map<string, int64_t> readTensorOffsetTable(ifstream & ifs) {
+    int64_t tensorOffsetTablePos;
     ifs.seekg(0);
     ifs.read((char*)&tensorOffsetTablePos, 8);
     ifs.seekg(tensorOffsetTablePos);
     int numTensors;
     ifs.read((char*)&numTensors, 4);
-    map<string, uint64_t> ret;
+    map<string, int64_t> ret;
     for(int i = 0; i < numTensors; ++i) {
         int strLen;
         ifs.read((char*)&strLen, 4);
         vector<char> buffer(strLen);
         ifs.read(buffer.data(), strLen);
-        uint64_t offset;
+        int64_t offset;
         ifs.read((char*)&offset, 8);
         ret.emplace(string(buffer), offset);
     }
@@ -57,12 +60,6 @@ unordered_map<string, ParallelizationLayout> TENSOR_LAYOUT {
         {"output.weight", SplitColumns},
 };
 
-int findAlignment(int elements, int alignmentBytes) {
-    int bytesPastAlignment = (elements * 4) % 64;
-    if(bytesPastAlignment == 0) return elements;
-    else return (1 + ((elements * 4) / 64)) * 64 / 4;
-}
-
 struct Fp32 {
     union {
         float x;
@@ -89,11 +86,11 @@ struct Fp32 {
 };
 
 template<typename T>
-pair<string, TensorFileInfo> consolidateTensorFragments(map<string, uint64_t> const & fragments,
+pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> const & fragments,
                                 ParallelizationLayout parallelizationLayout,
                                 OutputFormat outputFormat,
                                 ifstream & ifs, ofstream & ofs) {
-    uint64_t position = ofs.tellp();
+    int64_t position = ofs.tellp();
     int numRows = 0;
     int numColumns = 0;
     int largestSplitDim = 0;
@@ -188,11 +185,11 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, uint64_t> co
 
 template<typename T>
 pair<string, TensorFileInfo> writeNonParallelizedTensor(string const & tensorName,
-                                                  uint64_t tensorOffset,
+                                                  int64_t tensorOffset,
                                                   OutputFormat outputFormat,
                                                   ifstream & ifs,
                                                   ofstream & ofs) {
-    uint64_t position = ofs.tellp();
+    int64_t position = ofs.tellp();
     int rows, cols;
     ifs.seekg(tensorOffset);
     ifs.read((char *) &rows, 4);
@@ -222,7 +219,7 @@ pair<string, TensorFileInfo> writeNonParallelizedTensor(string const & tensorNam
                      TensorFileInfo{position, rows, cols, rows});
 }
 
-int countParallelFragments(map<string, uint64_t> const & offsetTable) {
+int countParallelFragments(map<string, int64_t> const & offsetTable) {
     set<string> prefixes;
     for(auto & p : offsetTable) {
         prefixes.insert(p.first.substr(0, 2));
@@ -230,7 +227,7 @@ int countParallelFragments(map<string, uint64_t> const & offsetTable) {
     return prefixes.size();
 }
 
-int countLayers(map<string, uint64_t> const & offsetTable) {
+int countLayers(map<string, int64_t> const & offsetTable) {
     set<string> layers;
     for(auto & p : offsetTable) {
         string t = p.first.substr(3);
@@ -243,7 +240,7 @@ int countLayers(map<string, uint64_t> const & offsetTable) {
     return layers.size();
 }
 
-list<string> getTensorNamesInOrder(map<string, uint64_t> const & offsetTable) {
+list<string> getTensorNamesInOrder(map<string, int64_t> const & offsetTable) {
     int numParallelFragments = countParallelFragments(offsetTable);
     int numLayers = countLayers(offsetTable);
     list<string> tensorNames;
@@ -255,6 +252,8 @@ list<string> getTensorNamesInOrder(map<string, uint64_t> const & offsetTable) {
         };
         tensorNames.push_back(printStr(fragment, "tok_embeddings.weight"));
         tensorNames.push_back(printStr(fragment, "rope.freqs"));
+        tensorNames.push_back(printStr(fragment, "norm.weight"));
+        tensorNames.push_back(printStr(fragment, "output.weight"));
         for(int layer = 0; layer < numLayers; ++layer) {
             auto printStr2 = [](int fragment, int layer, string tail) {
                 stringstream sstr;
@@ -271,25 +270,35 @@ list<string> getTensorNamesInOrder(map<string, uint64_t> const & offsetTable) {
             tensorNames.push_back(printStr2(fragment, layer, "feed_forward.w2.weight"));
             tensorNames.push_back(printStr2(fragment, layer, "feed_forward.w3.weight"));
         }
-        tensorNames.push_back(printStr(fragment, "norm.weight"));
-        tensorNames.push_back(printStr(fragment, "output.weight"));
     }
     return tensorNames;
+}
+
+bool shouldPrependWithPad(string const & tensorName) {
+    return tensorName.ends_with("tok_embeddings.weight") || tensorName.ends_with("attention_norm.weight");
+}
+
+void writePad(ofstream & ofs) {
+    int64_t cur = ofs.tellp();
+    int64_t pageSize = getpagesize();
+    int64_t excess = cur % pageSize;
+    if(excess) {
+        int64_t padSize = pageSize - excess;
+        vector<int8_t> dummy(padSize);
+        ofs.write((char *) dummy.data(), padSize);
+    }
 }
 
 int main(int argc, char ** argv) {
     ifstream ifs(argv[1]);
     ofstream ofs("llama_model.bin");
-    uint64_t dummy = 0;
-    for(int i = 0; i < 8; ++i) {
-        // The first of these is the position of a table and the other 7 are padding
-        ofs.write((char *) &dummy, 8);
-    }
-    map<string, uint64_t> offsetTable = readTensorOffsetTable(ifs);
+    int64_t dummy = 0;
+    ofs.write((char *) &dummy, 8);
+    map<string, int64_t> offsetTable = readTensorOffsetTable(ifs);
     list<pair<string, TensorFileInfo>> tensorInfoTable;
     list<string> tensorNames = getTensorNamesInOrder(offsetTable);
     for(string const & tensorName : tensorNames) {
-        uint64_t tensorOffset = offsetTable.at(tensorName);
+        int64_t tensorOffset = offsetTable.at(tensorName);
         bool isParallel = false;
         ParallelizationLayout parallelizationLayout = Duplicated;
         for(auto & p2: TENSOR_LAYOUT) {
@@ -300,6 +309,9 @@ int main(int argc, char ** argv) {
             }
         }
         if(tensorName.starts_with("00")) {
+            if(shouldPrependWithPad(tensorName)) {
+                writePad(ofs);
+            }
             if (!isParallel) {
                 //Should be able to write this data and forget about parallel copies.  But do confirm that the parallel
                 //copies are identical or close.
@@ -309,7 +321,7 @@ int main(int argc, char ** argv) {
             } else {
                 string tensorNameNoPrefix = tensorName.substr(3);
                 //collect the names of all fragments of the tensor
-                map<string, uint64_t> fragments;
+                map<string, int64_t> fragments;
                 fragments.emplace(tensorName, tensorOffset);
                 for (auto &p2: offsetTable) {
                     if (p2.first.ends_with(tensorNameNoPrefix)) {
@@ -322,7 +334,7 @@ int main(int argc, char ** argv) {
             }
         }
     }
-    uint64_t tensorInfoTablePosition = ofs.tellp();
+    int64_t tensorInfoTablePosition = ofs.tellp();
     int numTensors = tensorInfoTable.size();
     ofs.write((char*) &numTensors, 4);
     for(auto & p : tensorInfoTable) {

@@ -7,12 +7,20 @@
 
 #include<cstdint>
 
-struct TensorFileInfo {
-    uint64_t offset;
-    int numRows;
-    int numColumns;
-    int leadingDimension;
-};
+namespace Common {
+    struct TensorFileInfo {
+        int64_t offset;
+        int numRows;
+        int numColumns;
+        int leadingDimension;
+    };
+
+    int findAlignment(int elements, int alignmentBytes) {
+        int bytesPastAlignment = (elements * 4) % alignmentBytes;
+        if(bytesPastAlignment == 0) return elements;
+        else return (1 + ((elements * 4) / alignmentBytes)) * alignmentBytes / 4;
+    }
+}
 
 
 #endif //STREAMING_LLAMA_COMMON_H
