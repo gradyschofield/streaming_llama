@@ -10,6 +10,7 @@
 #endif
 
 #include<Common.h>
+#include<Timer.h>
 
 typedef float FloatType; // TODO can we change this for bfloat16 on MacOS Sanoma
 
@@ -36,7 +37,7 @@ public:
 
     template<typename T>
     T * getPtr(void* base) const {
-        return (T*)((uint8_t*)base - offsetIntoBlock);
+        return (T*)((uint8_t*)base + offsetIntoBlock);
     }
 
     int getNumRows() const {
@@ -52,13 +53,37 @@ public:
     }
 };
 
+class Scratch {
+    void * ptr;
+    int leadingDimension;
+public:
+    Scratch(){
+    }
+
+    template<typename Allocator>
+    Scratch(Allocator && alignedAlloc, int alignmentBytes, int leadingDimension, int numColumns)
+        : leadingDimension(leadingDimension)
+    {
+        alignedAlloc((void**)&ptr, alignmentBytes, leadingDimension * numColumns);
+    }
+
+    template<typename T>
+    T * getPtr() {
+        return (T*)ptr;
+    }
+
+    int getLeadingDimension() {
+        return leadingDimension;
+    }
+};
+
 class TransformerBlockScratch {
     int freeIo = 0;
-    void * ioPtr[2];
-    void * inputCopyBuffer;
-    void * wQout;
-    void * wKout;
-    void * wVout;
+    Scratch ioPtr[2];
+    Scratch inputCopyBuffer;
+    Scratch wQout;
+    Scratch wKout;
+    Scratch wVout;
     void * wOout;
     void * wOoutCopy;
     void * qkOut;
@@ -84,14 +109,14 @@ public:
             totalAlloc += size;
             posix_memalign(p, alignment, size);
         };
-        alignedAlloc((void**)&ioPtr[0], 64, embeddingLeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&ioPtr[1], 64, embeddingLeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&inputCopyBuffer, 64, embeddingLeadingDim * maxSequenceLength);
+        ioPtr[0] = Scratch(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
+        ioPtr[1] = Scratch(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
+        inputCopyBuffer = Scratch(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
 
         //TODO The heads within each matrix aren't aligned.  Does it even matter?  Some experimentation is needed.
-        alignedAlloc((void**)&wQout, 64, qLeadingDim * maxSequenceLength);
-        alignedAlloc((void**)&wKout, 64, kLeadingDim * (cacheSize + maxSequenceLength));
-        alignedAlloc((void**)&wVout, 64, vLeadingDim * (cacheSize + maxSequenceLength));
+        wQout = Scratch(alignedAlloc, 64, qLeadingDim, maxSequenceLength);
+        wKout = Scratch(alignedAlloc, 64, kLeadingDim , cacheSize + maxSequenceLength);
+        wVout = Scratch(alignedAlloc, 64, vLeadingDim , cacheSize + maxSequenceLength);
         alignedAlloc((void**)&wOout, 64, oLeadingDim * maxSequenceLength);
         alignedAlloc((void**)&wOoutCopy, 64, oLeadingDim * maxSequenceLength);
 
@@ -106,16 +131,26 @@ public:
         cout << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
     }
 
-    template<typename T>
-    T * takeFreeIoPtr() {
-        void * out = ioPtr[freeIo];
+    Scratch takeFreeIoPtr() {
+        Scratch out = ioPtr[freeIo];
         freeIo = (freeIo + 1) % 2;
-        return (T*)out;
+        return out;
     }
 
-    template<typename T>
-    T * getInputCopyBuffer() {
-        return (T*) inputCopyBuffer;
+    Scratch getInputCopyBuffer() {
+        return inputCopyBuffer;
+    }
+
+    Scratch getWQout() {
+        return wQout;
+    }
+
+    Scratch getWKout() {
+        return wKout;
+    }
+
+    Scratch getWVout() {
+        return wVout;
     }
 };
 
@@ -149,10 +184,19 @@ class TransformerBlock {
     size_t mapLength;
     int tensorFile;
     void * mapAddress = nullptr;
+    float normEps;
+    int currentToken = 0;
+    float * ropeFreqs;
+    int numHeads;
 
 public:
-    TransformerBlock(int layer, map<string, TensorFileInfo> const & tensorFileInfo, int tensorFile)
-        : tensorFile(tensorFile)
+    TransformerBlock(int layer,
+                     map<string, TensorFileInfo> const & tensorFileInfo,
+                     int tensorFile,
+                     float normEps,
+                     float * ropeFreqs,
+                     int numHeads)
+        : tensorFile(tensorFile), normEps(normEps), ropeFreqs(ropeFreqs), numHeads(numHeads)
     {
         vector<pair<string, TensorFileInfo>> layerInfos = getTensorsForLayer(layer, tensorFileInfo);
         mapOffset = layerInfos.front().second.offset;
@@ -191,13 +235,89 @@ public:
     }
 
     template<typename T>
-    T * evaluate(T * p, int seqlen, shared_ptr<TransformerBlockScratch> transformerBlockScratch) {
-        T * out = transformerBlockScratch->takeFreeIoPtr<T>();
+    Scratch evaluate(Scratch p,
+                     int seqlen,
+                     shared_ptr<TransformerBlockScratch> transformerBlockScratch) {
+        Scratch out = transformerBlockScratch->takeFreeIoPtr();
+        Scratch inputCopy = transformerBlockScratch->getInputCopyBuffer();
+        memcpy(inputCopy.getPtr<T>(), out.getPtr<T>(), seqlen * out.getLeadingDimension() * sizeof(T));
+
+        //Layer normalization
+        T* inputLayerNormWeights = attentionNormWeights.getPtr<T>(mapAddress);
+        for(int i = 0; i < seqlen; ++i) {
+            T accum = 0;
+            T* ptr = &inputCopy.getPtr<T>()[i * inputCopy.getLeadingDimension()];
+            for(int j = 0; j < queryWeights.getNumColumns(); ++j) {
+                accum += ptr[j] * ptr[j];
+            }
+            float norm = 1.0 / sqrt(accum + normEps);
+            for(int j = 0; j < queryWeights.getNumColumns(); ++j) {
+                ptr[j] *= norm * inputLayerNormWeights[j];
+            }
+        }
+        //M = queryWeights.numRows, K = queryWeights.numCols or embeddingDimension, N = seqlen
+        cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                    queryWeights.getNumRows(), seqlen, queryWeights.getNumColumns(),
+                    1.0,
+                    queryWeights.getPtr<T>(mapAddress),
+                    queryWeights.getLeadingDimension(),
+                    inputCopy.getPtr<T>(),
+                    inputCopy.getLeadingDimension(),
+                    0.0,
+                    transformerBlockScratch->getWQout().getPtr<T>(),
+                    transformerBlockScratch->getWQout().getLeadingDimension());
+
+        cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                    keyWeights.getNumRows(), seqlen, keyWeights.getNumColumns(),
+                    1.0,
+                    keyWeights.getPtr<T>(mapAddress),
+                    keyWeights.getLeadingDimension(),
+                    inputCopy.getPtr<T>(),
+                    inputCopy.getLeadingDimension(),
+                    0.0,
+                    transformerBlockScratch->getWKout().getPtr<T>(),
+                    transformerBlockScratch->getWKout().getLeadingDimension());
+
+        cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                    valueWeights.getNumRows(), seqlen, valueWeights.getNumColumns(),
+                    1.0,
+                    valueWeights.getPtr<T>(mapAddress),
+                    valueWeights.getLeadingDimension(),
+                    inputCopy.getPtr<T>(),
+                    inputCopy.getLeadingDimension(),
+                    0.0,
+                    transformerBlockScratch->getWVout().getPtr<T>(),
+                    transformerBlockScratch->getWVout().getLeadingDimension());
+
+        // Apply rotary embedding
+        int headDimension = queryWeights.getNumRows() / numHeads;
+        auto rotaryPositionEmbedding = [this, headDimension, seqlen](T* basePtr, int leadingDimension) {
+            for (int j = 0; j < seqlen; ++j) {
+                T * ptr = &basePtr[j*leadingDimension];
+                int position = currentToken + j;
+                for (int head = 0; head < numHeads; ++head) {
+                    int k = 0;
+                    for (int i = head * headDimension; i < (head + 1) * headDimension; i += 2) {
+                        float t0 = ptr[i + 1];
+                        float t1 = ptr[i];
+                        float theta = ropeFreqs[k++];
+                        float c = cos(position*theta);
+                        float s = sin(position*theta);
+                        ptr[i] = ptr[i] * c + t0 * s; //TODO check which sine gets the minus
+                        ptr[i + 1] = ptr[i + 1] * s + t0 * c;//TODO check which sine gets the minus
+                    }
+                }
+            }
+        };
+        Scratch wKOut = transformerBlockScratch->getWKout();
+        Scratch wQOut = transformerBlockScratch->getWQout();
+        rotaryPositionEmbedding(wQOut.getPtr<FloatType>(), wQOut.getLeadingDimension());
+        rotaryPositionEmbedding(wKOut.getPtr<FloatType>(), wKOut.getLeadingDimension());
         /*
-         * t0 = layerNorm(p) * attention_norm_weights
-         * tQ = wQ * t0
-         * tK = wK * t0
-         * apply position embedding
+         * x t0 = layerNorm(p) * attention_norm_weights
+         * x tQ = wQ * t0
+         * x tK = wK * t0
+         * x apply position embedding
          * t1 = tQ^T * tK
          * t1 += mask
          * t2 = row_wise_softmax(t1 / sqrt(row len))
@@ -273,6 +393,11 @@ public:
         if(mapAddress) munmap(mapAddress, mapLength);
     }
 
+    template<typename T>
+    T * getRopeFreqPtr() {
+        return ropeFreqs.getPtr<T>(mapAddress);
+    }
+
     void getTokenEmbedding(list<int> const & tokens, FloatType * out) {
         FloatType const * ptr = tokenEmbeddings.getPtr<FloatType>(mapAddress);
         int i = 0;
@@ -290,13 +415,17 @@ class LlamaModel {
     vector<shared_ptr<TransformerBlock>> transformerBlocks;
     int tensorFile;
     shared_ptr<TransformerBlockScratch> transformerBlockScratch;
+    float normEps;
 
 public:
     LlamaModel(map<string, TensorFileInfo> const & tensorFileInfo,
                string const & tensorFilename,
                int numHeads,
                int maxSequenceLength,
-               int cacheSize) {
+               int cacheSize,
+               float normEps)
+       : normEps(normEps)
+   {
         transformerBlockScratch = make_shared<TransformerBlockScratch>(
                 maxSequenceLength, cacheSize, numHeads,
                 tensorFileInfo.at("tok_embeddings.weight").leadingDimension,
@@ -311,7 +440,12 @@ public:
         int layerCount = getLayerCount(tensorFileInfo);
         nonTransformerWeights = make_shared<NonTransformerWeights>(tensorFileInfo, tensorFile);
         for(int i = 0; i < layerCount; ++i) {
-            transformerBlocks.push_back(make_shared<TransformerBlock>(i, tensorFileInfo, tensorFile));
+            transformerBlocks.push_back(make_shared<TransformerBlock>(i,
+                                                                      tensorFileInfo,
+                                                                      tensorFile,
+                                                                      normEps,
+                                                                      nonTransformerWeights->getRopeFreqPtr<float>(),
+                                                                      numHeads));
         }
     }
 
@@ -322,10 +456,14 @@ public:
     vector<FloatType> evaluate(list<int> const & tokens) {
         int seqlen = tokens.size();
         vector<FloatType> ret;
-        FloatType * out = transformerBlockScratch->takeFreeIoPtr<FloatType>();
-        nonTransformerWeights->getTokenEmbedding(tokens, out);
+        Scratch out = transformerBlockScratch->takeFreeIoPtr();
+        nonTransformerWeights->getTokenEmbedding(tokens, out.getPtr<FloatType>());
         for(auto & transformerBlock : transformerBlocks) {
-            out = transformerBlock->evaluate(out, seqlen, transformerBlockScratch);
+            transformerBlock->mmap();
+            out = transformerBlock->evaluate<FloatType>(out,
+                                                        seqlen,
+                                                        transformerBlockScratch);
+            transformerBlock->munmap();
         }
         //TODO Do layer normalization and multiplication of output weights
         return ret;
@@ -384,8 +522,17 @@ int main(int argc, char ** argv) {
     ifs.close();
     int maxSequenceLength = 1;
     int cacheSize = 500;
-    LlamaModel model(tensorFileInfo, filename, numHeads, maxSequenceLength, cacheSize);
+    LlamaModel model(tensorFileInfo, filename, numHeads, maxSequenceLength, cacheSize, normEps);
     list<int> tokenIdx{5000};
+    Timer timer;
     model.evaluate(tokenIdx);
+    cout << timer.elapsed() << "\n";
+    timer.start();
+    int count = 10;
+    for(int i = 0; i < count; ++i) {
+        list<int> t{rand() % 32000};
+        model.evaluate(t);
+    }
+    cout << timer.elapsed()/count << " sec per token\n";
     return 0;
 }
