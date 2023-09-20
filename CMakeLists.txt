@@ -3,8 +3,12 @@ project(streaming_llama)
 
 set(CMAKE_CXX_STANDARD 23)
 
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+if(APPLE)
+    set(EXTRA_CXX_FLAGS "-DACCELERATE_NEW_LAPACK")
+endif()
+
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g ${EXTRA_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${EXTRA_CXX_FLAGS}")
 
 include_directories(src/)
 
