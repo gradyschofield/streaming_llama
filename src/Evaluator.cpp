@@ -1,3 +1,8 @@
+#include<sys/socket.h>
+#include<sys/un.h>
+#include<iostream>
+#include<unistd.h>
+
 #include<algorithm>
 #include<fstream>
 #include<iostream>
@@ -14,10 +19,21 @@
 #include<Common.h>
 #include<Timer.h>
 
+/*
+ * TODO setup IPC and python program to communicate with this code to encode/decode strings
+ * TODO finish the correctness todos (sign on sine etc.)
+ * TODO MKL setup
+ * TODO handle differenct number of kv heads for largest model
+ * TODO option for converting to fp32 after mapping if it seems like it would make the smallest model run OK on Mac
+ * TODO Cuda impelmentation
+ */
+
 typedef float FloatType; // TODO can we change this for bfloat16 on MacOS Sanoma
 
 using namespace std;
 using namespace Common;
+
+ostream & logger = cout;
 
 class Weights {
     int64_t offsetIntoBlock;
@@ -135,7 +151,7 @@ public:
 
         int outLeadingDim = findAlignment(vocabularySize, 64);
         out = Scratch(alignedAlloc, 64, outLeadingDim, maxSequenceLength);
-        cout << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
+        logger << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
     }
 
     Scratch takeFreeIoPtr() {
@@ -281,6 +297,7 @@ public:
     }
 
     void mmap() {
+        if(mapAddress) return;
         mapAddress = ::mmap(nullptr, mapLength, PROT_READ, MAP_SHARED, tensorFile, mapOffset);
     }
 
@@ -354,13 +371,13 @@ public:
                 for (int head = 0; head < numHeads; ++head) {
                     int k = 0;
                     for (int i = head * headDimension; i < (head + 1) * headDimension; i += 2) {
-                        float t0 = ptr[i + 1];
-                        float t1 = ptr[i];
+                        float re = ptr[i];
+                        float im = ptr[i+1];
                         float theta = ropeFreqs[k++];
                         float c = cos(position*theta);
                         float s = sin(position*theta);
-                        ptr[i] = ptr[i] * c + t0 * s; //TODO check which sine gets the minus
-                        ptr[i + 1] = ptr[i + 1] * s + t0 * c;//TODO check which sine gets the minus
+                        ptr[i] = re * c - im * s;
+                        ptr[i + 1] = re * s + im  * c;
                     }
                 }
             }
@@ -405,13 +422,16 @@ public:
                     qkOutPtr[headOffset + i + j * qkOutLeadingDim] *= dimNormalizer;
                 }
                 float accum = 0;
-                //TODO what was the trick that kept exp from overflowing when used in a softmax?
+                float maxArg = -numeric_limits<float>::max();
                 for (int i = currentToken; i < currentToken + seqlen; ++i) {
-                    accum += exp(qkOutPtr[headOffset + i + j * qkOutLeadingDim]);
+                    maxArg = max(maxArg, qkOutPtr[headOffset + i + j * qkOutLeadingDim]);
+                }
+                for (int i = currentToken; i < currentToken + seqlen; ++i) {
+                    accum += exp(qkOutPtr[headOffset + i + j * qkOutLeadingDim] - maxArg);
                 }
                 float normalizer = 1.0 / accum;
                 for (int i = currentToken; i < currentToken + seqlen; ++i) {
-                    float term = exp(qkOutPtr[headOffset + i + j * qkOutLeadingDim]);
+                    float term = exp(qkOutPtr[headOffset + i + j * qkOutLeadingDim] - maxArg);
                     qkOutPtr[headOffset + i + j * qkOutLeadingDim] *= term * normalizer;
                 }
             }
@@ -584,7 +604,7 @@ public:
         mapLength = tfi.offset + tfi.leadingDimension * tfi.numColumns * floatSize - mapOffset;
         mapAddress = mmap(nullptr, mapLength, PROT_READ, MAP_PRIVATE, tensorFile, mapOffset);
         if(mapAddress == MAP_FAILED) {
-            cout << "mmap failed: " << strerror(errno) << "\n";
+            logger << "mmap failed: " << strerror(errno) << "\n";
             throw 3;
         }
         map<string, TensorFileInfo> tensorInfoMap;
@@ -709,12 +729,15 @@ public:
         vector<FloatType> ret;
         Scratch out = transformerBlockScratch->takeFreeIoPtr();
         nonTransformerWeights->getTokenEmbedding(tokens, out.getPtr<FloatType>());
+        int k = 0;
+        int blockLimit = 2;
         for(auto & transformerBlock : transformerBlocks) {
+            if(k > blockLimit) break;
             transformerBlock->mmap();
             out = transformerBlock->evaluate<FloatType>(out,
                                                         seqlen,
                                                         transformerBlockScratch);
-            transformerBlock->munmap();
+            ++k;
         }
         nonTransformerWeights->applyOutputLayer<FloatType>(out,
                                                            transformerBlockScratch->getOut(),
@@ -756,17 +779,85 @@ tuple<int, int, float> readParams(ifstream & ifs) {
     ifs.read((char*) &numHeads, 4);
     ifs.read((char*) &numKvHeads, 4);
     ifs.read((char*) &normEps, 4);
-    cout << "numHeads: " << numHeads << "\n";
-    cout << "numKvHeads: " << numKvHeads << "\n";
-    cout << "normEps: " << normEps << "\n";
+    logger << "numHeads: " << numHeads << "\n";
+    logger << "numKvHeads: " << numKvHeads << "\n";
+    logger << "normEps: " << normEps << "\n";
     return tie(numHeads, numKvHeads, normEps);
 }
 
+string const socketPath = "/tmp/codellama_evaluator.sock";
+
+pair<int, int> setupSockets() {
+    int serverSocket;
+    struct sockaddr_un serverAddress;
+
+    serverSocket = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (serverSocket == -1) {
+        logger << "Failed to create socket." << endl;
+        return {-1,-1};
+    }
+    memset(&serverAddress, 0, sizeof(serverAddress));
+    serverAddress.sun_family = AF_UNIX;
+    strncpy(serverAddress.sun_path, socketPath.c_str(), sizeof(serverAddress.sun_path) - 1);
+    unlink(socketPath.c_str());
+
+    if (bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) == -1) {
+        logger << "Bind error." << endl;
+        return {-1,-1};
+    }
+
+    if (listen(serverSocket, 1) == -1) {
+        logger << "Listen error." << endl;
+        return {-1,-1};
+    }
+
+    int clientSocket;
+    struct sockaddr_un clientAddress;
+    socklen_t clientAddressSize;
+    clientAddressSize = sizeof(clientAddress);
+    clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressSize);
+    if (clientSocket == -1) {
+        logger << "Accept error." << endl;
+        return {-1,-1};
+    }
+    return make_pair(clientSocket, serverSocket);
+}
+
 int main(int argc, char ** argv) {
+    //logger = ofstream("log");
+    /*
+
+    int clientSocket = 0, serverSocket = 0;
+    tie(clientSocket, serverSocket) = setupSockets();
+    if(clientSocket == -1) return 1;
+
+    while (true) {
+        int buffer[256];
+        int num_bytes = recv(clientSocket, buffer, sizeof(buffer), 0);
+
+        if (num_bytes <= 0) {
+            logger << "Receive error or client disconnected." << std::endl;
+            break;
+        }
+
+        for (int i = 0; i < num_bytes / sizeof(int); ++i) {
+            buffer[i]++;
+        }
+
+        send(clientSocket, buffer, num_bytes, 0);
+    }
+
+    close(clientSocket);
+    close(serverSocket);
+    unlink(socketPath.c_str());
+    return 0;
+
+     */
+
     string filename = "llama_model_7.bin";
     ifstream ifs(filename, ios::binary);
     if(ifs.fail()) {
-        cout << "Could not load llama model.\n";
+        logger << "Could not load llama model.\n";
         return 1;
     }
     map<string, TensorFileInfo> tensorFileInfo = readTensorFileInfoTable(ifs);
@@ -781,15 +872,13 @@ int main(int argc, char ** argv) {
     list<int> tokenIdx{5000};
     Timer timer;
     model.evaluate(tokenIdx);
-    cout << timer.elapsed() << " sec for one token\n";
+    logger << timer.elapsed() << " sec for one token\n";
     timer.start();
-    /*
     int count = 10;
     for(int i = 0; i < count; ++i) {
         list<int> t{rand() % 32000};
         model.evaluate(t);
     }
-    cout << timer.elapsed()/count << " sec per token\n";
-     */
+    logger << timer.elapsed()/count << " sec per token\n";
     return 0;
 }

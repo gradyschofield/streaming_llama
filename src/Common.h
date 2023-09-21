@@ -6,8 +6,12 @@
 #define STREAMING_LLAMA_COMMON_H
 
 #include<cstdint>
+#include<fstream>
+
+using namespace std;
 
 namespace Common {
+
     struct TensorFileInfo {
         int64_t offset;
         int numRows;
