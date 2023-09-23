@@ -1,7 +1,4 @@
-#include<sys/socket.h>
-#include<sys/un.h>
 #include<iostream>
-#include<unistd.h>
 
 #include<algorithm>
 #include<fstream>
@@ -17,11 +14,11 @@
 #endif
 
 #include<Common.h>
+#include<Socket.h>
 #include<Timer.h>
 
 /*
- * TODO setup IPC and python program to communicate with this code to encode/decode strings
- * TODO finish the correctness todos (sign on sine etc.)
+ * TODO is the ParallelEmbedding stored in row major format, try not transposing the embedding storage in Deparallelizer
  * TODO MKL setup
  * TODO handle differenct number of kv heads for largest model
  * TODO option for converting to fp32 after mapping if it seems like it would make the smallest model run OK on Mac
@@ -33,7 +30,7 @@ typedef float FloatType; // TODO can we change this for bfloat16 on MacOS Sanoma
 using namespace std;
 using namespace Common;
 
-ostream & logger = cout;
+static ostream & logger = cout;
 
 class Weights {
     int64_t offsetIntoBlock;
@@ -82,7 +79,7 @@ public:
     Scratch(Allocator && alignedAlloc, int alignmentBytes, int leadingDimension, int numColumns)
         : leadingDimension(leadingDimension)
     {
-        alignedAlloc((void**)&ptr, alignmentBytes, leadingDimension * numColumns);
+        alignedAlloc((void**)&ptr, alignmentBytes, leadingDimension * numColumns * sizeof(FloatType));
     }
 
     template<typename T>
@@ -100,8 +97,8 @@ class TransformerBlockScratch {
     Scratch ioPtr[2];
     Scratch inputCopyBuffer;
     Scratch wQout;
-    Scratch wKout;
-    Scratch wVout;
+    vector<Scratch> wKout;
+    vector<Scratch> wVout;
     Scratch wOout;
     Scratch wOoutCopy;
     Scratch qkOut;
@@ -123,7 +120,8 @@ public:
                             int w1LeadingDim,
                             int w2LeadingDim,
                             int w3LeadingDim,
-                            int vocabularySize) {
+                            int vocabularySize,
+                            int numLayers) {
         size_t totalAlloc = 0;
         auto alignedAlloc = [&totalAlloc](void ** p, int alignment, size_t size) {
             totalAlloc += size;
@@ -135,8 +133,10 @@ public:
 
         //TODO The heads within each matrix aren't aligned.  Does it even matter?  Some experimentation is needed.
         wQout = Scratch(alignedAlloc, 64, qLeadingDim, maxSequenceLength);
-        wKout = Scratch(alignedAlloc, 64, kLeadingDim , cacheSize + maxSequenceLength);
-        wVout = Scratch(alignedAlloc, 64, vLeadingDim , cacheSize + maxSequenceLength);
+        for(int i = 0; i < numLayers; ++i) {
+            wKout.push_back(Scratch(alignedAlloc, 64, kLeadingDim, cacheSize + maxSequenceLength));
+            wVout.push_back(Scratch(alignedAlloc, 64, vLeadingDim, cacheSize + maxSequenceLength));
+        }
         wOout = Scratch(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
         wOoutCopy = Scratch(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
 
@@ -150,14 +150,14 @@ public:
         w3Out = Scratch(alignedAlloc, 64, w3LeadingDim, maxSequenceLength);
 
         int outLeadingDim = findAlignment(vocabularySize, 64);
-        out = Scratch(alignedAlloc, 64, outLeadingDim, maxSequenceLength);
+        out = Scratch(alignedAlloc, 64, outLeadingDim, 1);
         logger << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
     }
 
     Scratch takeFreeIoPtr() {
-        Scratch out = ioPtr[freeIo];
+        Scratch tmp = ioPtr[freeIo];
         freeIo = (freeIo + 1) % 2;
-        return out;
+        return tmp;
     }
 
     Scratch getInputCopyBuffer() {
@@ -168,12 +168,12 @@ public:
         return wQout;
     }
 
-    Scratch getWKout() {
-        return wKout;
+    Scratch getWKout(int layerIdx) {
+        return wKout[layerIdx];
     }
 
-    Scratch getWVout() {
-        return wVout;
+    Scratch getWVout(int layerIdx) {
+        return wVout[layerIdx];
     }
 
     Scratch getQKout() {
@@ -233,7 +233,7 @@ void layerNormalization(T * weights, T* src, int numRows, int leadingDimension, 
         for(int i = 0; i < numRows; ++i) {
             accum += ptr[i] * ptr[i];
         }
-        float norm = 1.0 / sqrt(accum + normEps);
+        float norm = 1.0 / sqrt(accum/numRows + normEps);
         for(int i = 0; i < numRows; ++i) {
             ptr[i] *= norm * weights[i];
         }
@@ -258,6 +258,7 @@ class TransformerBlock {
     int currentToken = 0;
     float * ropeFreqs;
     int numHeads;
+    int layerIdx;
 
 public:
     TransformerBlock(int layer,
@@ -267,7 +268,8 @@ public:
                      float * ropeFreqs,
                      int numHeads,
                      int floatSize)
-        : tensorFile(tensorFile), normEps(normEps), ropeFreqs(ropeFreqs), numHeads(numHeads)
+        : tensorFile(tensorFile), normEps(normEps), ropeFreqs(ropeFreqs), numHeads(numHeads),
+            layerIdx(layer)
     {
         vector<pair<string, TensorFileInfo>> layerInfos = getTensorsForLayer(layer, tensorFileInfo);
         mapOffset = layerInfos.front().second.offset;
@@ -336,8 +338,8 @@ public:
                     wqOutPtr,
                     wqOutLeadingDim);
 
-        T* wkOutPtr = transformerBlockScratch->getWKout().getPtr<T>();
-        int wkOutLeadingDim = transformerBlockScratch->getWKout().getLeadingDimension();
+        T* wkOutPtr = transformerBlockScratch->getWKout(layerIdx).getPtr<T>();
+        int wkOutLeadingDim = transformerBlockScratch->getWKout(layerIdx).getLeadingDimension();
         cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
                     keyWeights.getNumRows(), seqlen, keyWeights.getNumColumns(),
                     1.0,
@@ -349,8 +351,8 @@ public:
                     &wkOutPtr[currentToken * wkOutLeadingDim],
                     wkOutLeadingDim);
 
-        T * wvOutPtr = transformerBlockScratch->getWVout().getPtr<T>();
-        int wvOutLeadingDim = transformerBlockScratch->getWVout().getLeadingDimension();
+        T * wvOutPtr = transformerBlockScratch->getWVout(layerIdx).getPtr<T>();
+        int wvOutLeadingDim = transformerBlockScratch->getWVout(layerIdx).getLeadingDimension();
         cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
                     valueWeights.getNumRows(), seqlen, valueWeights.getNumColumns(),
                     1.0,
@@ -382,10 +384,8 @@ public:
                 }
             }
         };
-        Scratch wQOut = transformerBlockScratch->getWQout();
-        rotaryPositionEmbedding(wQOut.getPtr<FloatType>(), wQOut.getLeadingDimension());
-        Scratch wKOut = transformerBlockScratch->getWKout();
-        rotaryPositionEmbedding(wKOut.getPtr<FloatType>(), wKOut.getLeadingDimension());
+        rotaryPositionEmbedding(wqOutPtr, wqOutLeadingDim);
+        rotaryPositionEmbedding(&wkOutPtr[currentToken * wkOutLeadingDim], wkOutLeadingDim);
 
         /*
          * Compute K^T * Q for each head of the attention mechanism
@@ -400,39 +400,39 @@ public:
             int M = currentToken + seqlen;
             int N = seqlen;
             int K = headDimension;
-            int headOffset = head * headDimension;
+            int inputHeadOffset = head * headDimension;
+            int outputHeadOffset = head * (currentToken + seqlen);
             cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
                         M, N, K,
                         1.0,
-                        &wkOutPtr[headOffset],
+                        &wkOutPtr[inputHeadOffset],
                         keyWeights.getLeadingDimension(),
-                        &wqOutPtr[headOffset],
+                        &wqOutPtr[inputHeadOffset],
                         queryWeights.getLeadingDimension(),
                         0.0,
-                        &qkOutPtr[headOffset],
+                        &qkOutPtr[outputHeadOffset],
                         qkOutLeadingDim);
             //Compute the softmax with masking
             for (int j = 0; j < seqlen; ++j) {
-                for (int i = currentToken + 1; i < currentToken + seqlen; ++i) {
-                    qkOutPtr[headOffset + i + j * qkOutLeadingDim] = -numeric_limits<float>::infinity();
+                for (int i = currentToken + j + 1; i < currentToken + seqlen; ++i) {
+                    qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] = -numeric_limits<float>::infinity();
                 }
-                //TODO check that its sqrt(headDimension)
                 float dimNormalizer = 1.0 / sqrt(headDimension);
-                for (int i = currentToken; i < currentToken + seqlen; ++i) {
-                    qkOutPtr[headOffset + i + j * qkOutLeadingDim] *= dimNormalizer;
+                for (int i = 0; i < currentToken + seqlen; ++i) {
+                    qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] *= dimNormalizer;
                 }
                 float accum = 0;
                 float maxArg = -numeric_limits<float>::max();
-                for (int i = currentToken; i < currentToken + seqlen; ++i) {
-                    maxArg = max(maxArg, qkOutPtr[headOffset + i + j * qkOutLeadingDim]);
+                for (int i = 0; i < currentToken + seqlen; ++i) {
+                    maxArg = max(maxArg, qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim]);
                 }
-                for (int i = currentToken; i < currentToken + seqlen; ++i) {
-                    accum += exp(qkOutPtr[headOffset + i + j * qkOutLeadingDim] - maxArg);
+                for (int i = 0; i < currentToken + seqlen; ++i) {
+                    accum += exp(qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] - maxArg);
                 }
                 float normalizer = 1.0 / accum;
-                for (int i = currentToken; i < currentToken + seqlen; ++i) {
-                    float term = exp(qkOutPtr[headOffset + i + j * qkOutLeadingDim] - maxArg);
-                    qkOutPtr[headOffset + i + j * qkOutLeadingDim] *= term * normalizer;
+                for (int i = 0; i < currentToken + seqlen; ++i) {
+                    float term = exp(qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] - maxArg);
+                    qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] = term * normalizer;
                 }
             }
         }
@@ -443,7 +443,8 @@ public:
         // Compute wV * softmax(K^T * Q).  The results of each head are "concatenated" with no extra work
         for(int head = 0; head < numHeads; ++head) {
             int headOffset = head * headDimension;
-            int M = queryWeights.getNumRows();
+            int qkHeadOffset = head * (currentToken + seqlen);
+            int M = headDimension;
             int N = seqlen;
             int K = currentToken + seqlen;
             cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
@@ -451,7 +452,7 @@ public:
                         1.0,
                         &wvOutPtr[headOffset],
                         wvOutLeadingDim,
-                        &qkOutPtr[headOffset],
+                        &qkOutPtr[qkHeadOffset],
                         qkOutLeadingDim,
                         0.0,
                         &vqkOutPtr[headOffset],
@@ -461,10 +462,10 @@ public:
         T* woOutPtr = transformerBlockScratch->getWOout().getPtr<T>();
         int woOutLeadingDim = transformerBlockScratch->getWOout().getLeadingDimension();
         cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                    valueWeights.getNumRows(), seqlen, valueWeights.getNumColumns(),
+                    outputWeights.getNumRows(), seqlen, outputWeights.getNumColumns(),
                     1.0,
-                    valueWeights.getPtr<T>(mapAddress),
-                    valueWeights.getLeadingDimension(),
+                    outputWeights.getPtr<T>(mapAddress),
+                    outputWeights.getLeadingDimension(),
                     vqkOutPtr,
                     vqkOutLeadingDim,
                     0.0,
@@ -627,11 +628,11 @@ public:
         return ropeFreqs.getPtr<T>(mapAddress);
     }
 
-    int getTokenEmbeddingDimension() const {
-        return tokenEmbeddings.getNumRows();
+    int getVocabularySize() const {
+        return tokenEmbeddings.getNumColumns();
     }
 
-    void getTokenEmbedding(list<int> const & tokens, FloatType * out) {
+    void getTokenEmbedding(vector<int> const & tokens, FloatType * out) {
         FloatType const * ptr = tokenEmbeddings.getPtr<FloatType>(mapAddress);
         int i = 0;
         for(int tok : tokens) {
@@ -693,8 +694,9 @@ public:
                int cacheSize,
                float normEps,
                int floatSize)
-       : normEps(normEps)
-   {
+            : normEps(normEps)
+    {
+        int layerCount = getLayerCount(tensorFileInfo);
         transformerBlockScratch = make_shared<TransformerBlockScratch>(
                 maxSequenceLength, cacheSize, numHeads,
                 tensorFileInfo.at("tok_embeddings.weight").leadingDimension,
@@ -705,9 +707,9 @@ public:
                 tensorFileInfo.at("layers.0.feed_forward.w1.weight").leadingDimension,
                 tensorFileInfo.at("layers.0.feed_forward.w2.weight").leadingDimension,
                 tensorFileInfo.at("layers.0.feed_forward.w3.weight").leadingDimension,
-                tensorFileInfo.at("tok_embeddings.weight").numColumns);
+                tensorFileInfo.at("tok_embeddings.weight").numColumns,
+                layerCount);
         tensorFile = open(tensorFilename.c_str(), O_RDONLY);
-        int layerCount = getLayerCount(tensorFileInfo);
         nonTransformerWeights = make_shared<NonTransformerWeights>(tensorFileInfo, tensorFile, floatSize);
         for(int i = 0; i < layerCount; ++i) {
             transformerBlocks.push_back(make_shared<TransformerBlock>(i,
@@ -724,25 +726,33 @@ public:
         close(tensorFile);
     }
 
-    vector<FloatType> evaluate(list<int> const & tokens) {
+    vector<FloatType> evaluate(vector<int> const & tokens) {
         int seqlen = tokens.size();
-        vector<FloatType> ret;
         Scratch out = transformerBlockScratch->takeFreeIoPtr();
         nonTransformerWeights->getTokenEmbedding(tokens, out.getPtr<FloatType>());
         int k = 0;
-        int blockLimit = 2;
+        int blockLimit = 99  ;
         for(auto & transformerBlock : transformerBlocks) {
             if(k > blockLimit) break;
             transformerBlock->mmap();
             out = transformerBlock->evaluate<FloatType>(out,
                                                         seqlen,
                                                         transformerBlockScratch);
+            transformerBlock->munmap();
             ++k;
         }
-        nonTransformerWeights->applyOutputLayer<FloatType>(out,
+        vector<FloatType> ret(nonTransformerWeights->getVocabularySize());
+        Scratch in = transformerBlockScratch->takeFreeIoPtr();
+        memcpy(in.getPtr<FloatType>(),
+               &out.getPtr<FloatType>()[out.getLeadingDimension() * (seqlen-1)],
+               sizeof(FloatType) * out.getLeadingDimension());
+        nonTransformerWeights->applyOutputLayer<FloatType>(in,
                                                            transformerBlockScratch->getOut(),
-                                                           seqlen,
+                                                           1,
                                                            normEps);
+        memcpy(ret.data(),
+               transformerBlockScratch->getOut().getPtr<FloatType>(),
+               sizeof(FloatType) * nonTransformerWeights->getVocabularySize());
         return ret;
     }
 
@@ -785,76 +795,20 @@ tuple<int, int, float> readParams(ifstream & ifs) {
     return tie(numHeads, numKvHeads, normEps);
 }
 
-string const socketPath = "/tmp/codellama_evaluator.sock";
-
-pair<int, int> setupSockets() {
-    int serverSocket;
-    struct sockaddr_un serverAddress;
-
-    serverSocket = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (serverSocket == -1) {
-        logger << "Failed to create socket." << endl;
-        return {-1,-1};
-    }
-    memset(&serverAddress, 0, sizeof(serverAddress));
-    serverAddress.sun_family = AF_UNIX;
-    strncpy(serverAddress.sun_path, socketPath.c_str(), sizeof(serverAddress.sun_path) - 1);
-    unlink(socketPath.c_str());
-
-    if (bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) == -1) {
-        logger << "Bind error." << endl;
-        return {-1,-1};
-    }
-
-    if (listen(serverSocket, 1) == -1) {
-        logger << "Listen error." << endl;
-        return {-1,-1};
-    }
-
-    int clientSocket;
-    struct sockaddr_un clientAddress;
-    socklen_t clientAddressSize;
-    clientAddressSize = sizeof(clientAddress);
-    clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressSize);
-    if (clientSocket == -1) {
-        logger << "Accept error." << endl;
-        return {-1,-1};
-    }
-    return make_pair(clientSocket, serverSocket);
-}
+#define MANUAL_TESTING 0
 
 int main(int argc, char ** argv) {
     //logger = ofstream("log");
-    /*
+#if MANUAL_TESTING == 0
+    Socket socket;
+#endif
 
-    int clientSocket = 0, serverSocket = 0;
-    tie(clientSocket, serverSocket) = setupSockets();
-    if(clientSocket == -1) return 1;
-
-    while (true) {
-        int buffer[256];
-        int num_bytes = recv(clientSocket, buffer, sizeof(buffer), 0);
-
-        if (num_bytes <= 0) {
-            logger << "Receive error or client disconnected." << std::endl;
-            break;
-        }
-
-        for (int i = 0; i < num_bytes / sizeof(int); ++i) {
-            buffer[i]++;
-        }
-
-        send(clientSocket, buffer, num_bytes, 0);
-    }
-
-    close(clientSocket);
-    close(serverSocket);
-    unlink(socketPath.c_str());
-    return 0;
-
-     */
-
+#if MANUAL_TESTING==1
     string filename = "llama_model_7.bin";
+#else
+    string filename = "release/llama_model_7.bin";
+    //string filename = "release/llama_model_notran_emb.bin";
+#endif
     ifstream ifs(filename, ios::binary);
     if(ifs.fail()) {
         logger << "Could not load llama model.\n";
@@ -865,10 +819,42 @@ int main(int argc, char ** argv) {
     float normEps;
     tie(numHeads, numKvHeads, normEps) = readParams(ifs);
     ifs.close();
-    int maxSequenceLength = 1;
-    int cacheSize = 500;
+    int maxSequenceLength = 100; // 19
+    int cacheSize = 500; // 0
     int floatSize = 4;
     LlamaModel model(tensorFileInfo, filename, numHeads, maxSequenceLength, cacheSize, normEps, floatSize);
+#if MANUAL_TESTING == 1
+    vector<FloatType> logits = model.evaluate({1,518,25580,29962,6028,366,2436,263,22172,3186,1824,297,315,1817,29973,29961,29914,25580,29962});
+    for(float t : logits) {
+        cout << t << " ";
+    }
+    return 0;
+#endif
+
+#if MANUAL_TESTING == 0
+    while (true) {
+        int numTokens = 0;
+        vector<int> tokens;
+        try {
+            numTokens = socket.getInt();
+            tokens = socket.getIntArray(numTokens);
+        } catch(exception & e) {
+            logger << "Client disconnected" << endl;
+            break;
+        }
+        Timer timer;
+        vector<FloatType> logits = model.evaluate(tokens);
+        logger << timer.elapsed()/tokens.size() << " sec per token.  sending back " << logits.size() << " logits" << endl;
+        timer.start();
+        socket.sendFloatArray(logits);
+        socket.sendInt(-1);
+    }
+#endif
+
+    return 0;
+
+
+    /*
     list<int> tokenIdx{5000};
     Timer timer;
     model.evaluate(tokenIdx);
@@ -880,5 +866,6 @@ int main(int argc, char ** argv) {
         model.evaluate(t);
     }
     logger << timer.elapsed()/count << " sec per token\n";
+     */
     return 0;
 }

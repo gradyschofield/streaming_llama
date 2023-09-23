@@ -10,6 +10,8 @@
 
 using namespace std;
 
+//extern ofstream logger;
+
 namespace Common {
 
     struct TensorFileInfo {
@@ -19,11 +21,7 @@ namespace Common {
         int leadingDimension;
     };
 
-    int findAlignment(int elements, int alignmentBytes) {
-        int bytesPastAlignment = (elements * 4) % alignmentBytes;
-        if(bytesPastAlignment == 0) return elements;
-        else return (1 + ((elements * 4) / alignmentBytes)) * alignmentBytes / 4;
-    }
+    int findAlignment(int elements, int alignmentBytes);
 }
 
 

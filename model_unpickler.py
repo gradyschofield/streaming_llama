@@ -80,6 +80,7 @@ class ModelUnpickler(pickle.Unpickler):
         else:
             outFile.write(struct.pack('i', size[1]))  # columns
             storage.load(offset, count).reshape(size).transpose().tofile(outFile)  # transpose to get column major layout
+            #storage.load(offset, count).reshape(size).tofile(outFile)
         return TensorInfo(storage.fileNumber, offset, outFileOffset)
 
     @staticmethod

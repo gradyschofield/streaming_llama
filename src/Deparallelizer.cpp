@@ -8,6 +8,7 @@
 #include<sstream>
 #include<string>
 #include<unordered_map>
+#include<vector>
 
 #include<Common.h>
 
@@ -33,7 +34,7 @@ map<string, int64_t> readTensorOffsetTable(ifstream & ifs) {
         ifs.read(buffer.data(), strLen);
         int64_t offset;
         ifs.read((char*)&offset, 8);
-        ret.emplace(string(buffer), offset);
+        ret.emplace(string(buffer.data(), buffer.size()), offset);
     }
     return ret;
 }
