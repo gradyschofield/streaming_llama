@@ -1,4 +1,6 @@
-#include<iostream>
+#include<unistd.h>
+#include<sys/mman.h>
+#include<fcntl.h>
 
 #include<algorithm>
 #include<fstream>
@@ -11,6 +13,7 @@
 #ifdef __APPLE__
 #include<Accelerate/Accelerate.h>
 #else
+#include<mkl.h>
 #endif
 
 #include<Common.h>
@@ -18,11 +21,10 @@
 #include<Timer.h>
 
 /*
- * TODO use bf16 to stream, convert to fp32 on the fly
- * TODO MKL setup
+ * TODO does oneDNN have anything to help with bfloat16?
  * TODO code cleanup
- * TODO handle differenct number of kv heads for largest model
  * TODO Cuda impelmentation
+ * TODO handle different number of kv heads for largest model
  */
 
 typedef float FloatType; // TODO can we change this for bfloat16 on MacOS Sanoma
