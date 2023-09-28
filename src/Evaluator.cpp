@@ -18,10 +18,10 @@
 #include<Timer.h>
 
 /*
- * TODO is the ParallelEmbedding stored in row major format, try not transposing the embedding storage in Deparallelizer
+ * TODO use bf16 to stream, convert to fp32 on the fly
  * TODO MKL setup
+ * TODO code cleanup
  * TODO handle differenct number of kv heads for largest model
- * TODO option for converting to fp32 after mapping if it seems like it would make the smallest model run OK on Mac
  * TODO Cuda impelmentation
  */
 
@@ -730,16 +730,12 @@ public:
         int seqlen = tokens.size();
         Scratch out = transformerBlockScratch->takeFreeIoPtr();
         nonTransformerWeights->getTokenEmbedding(tokens, out.getPtr<FloatType>());
-        int k = 0;
-        int blockLimit = 99  ;
         for(auto & transformerBlock : transformerBlocks) {
-            if(k > blockLimit) break;
             transformerBlock->mmap();
             out = transformerBlock->evaluate<FloatType>(out,
                                                         seqlen,
                                                         transformerBlockScratch);
             transformerBlock->munmap();
-            ++k;
         }
         vector<FloatType> ret(nonTransformerWeights->getVocabularySize());
         Scratch in = transformerBlockScratch->takeFreeIoPtr();
@@ -795,7 +791,7 @@ tuple<int, int, float> readParams(ifstream & ifs) {
     return tie(numHeads, numKvHeads, normEps);
 }
 
-#define MANUAL_TESTING 0
+#define MANUAL_TESTING 1
 
 int main(int argc, char ** argv) {
     //logger = ofstream("log");

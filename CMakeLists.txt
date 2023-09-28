@@ -30,12 +30,10 @@ set(SRC src/Socket.h
 add_executable(deparallelizer ${COMMON_SRC} src/Deparallelizer.cpp)
 add_executable(evaluator ${COMMON_SRC} ${SRC} src/Evaluator.cpp)
 if(APPLE)
-    target_link_libraries(evaluator "-framework Accelerate")
+    target_link_libraries(evaluator "-framework Accelerate -framework Foundation -framework MetalPerformanceShaders")
 else()
     target_link_libraries(evaluator)
 endif()
 
 add_executable(testSgemm src/TestSgemm.cpp src/Timer.cpp src/Timer.h)
 target_link_libraries(testSgemm "-framework Accelerate")
-
-add_executable(testreadten src/TestReadTensor.cpp)

@@ -24,7 +24,9 @@ Socket::Socket()
     memset(&serverAddress, 0, sizeof(serverAddress));
     serverAddress.sun_family = AF_UNIX;
     strncpy(serverAddress.sun_path, socketPath.c_str(), sizeof(serverAddress.sun_path) - 1);
-    unlink(socketPath.c_str());
+    if (unlink(socketPath.c_str())) {
+        logger << "Error removing socket path " << strerror(errno) << endl;
+    }
 
     if (bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) == -1) {
         logger << "Bind error." << endl;

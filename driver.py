@@ -2,6 +2,7 @@ from codellama.tokenizer import Tokenizer
 from localsock import Socket
 import subprocess
 from codellama.generation import get_token
+import signal
 import sys
 
 B_INST, E_INST = "[INST]", "[/INST]"
@@ -14,6 +15,11 @@ if __name__ == "__main__":
 
     socket = Socket()
 
+    def cleanup(signum, frame):
+        socket.close()
+        sys.exit(1)
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
     topP = 0.95
     temperature = 0.2
 
