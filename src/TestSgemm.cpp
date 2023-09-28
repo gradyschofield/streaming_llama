@@ -7,7 +7,11 @@
 #include<thread>
 #include<vector>
 
+#if __APPLE__
 #include<Accelerate/Accelerate.h>
+#else
+#include<mkl.h>
+#endif
 
 #include<Timer.h>
 
@@ -28,7 +32,7 @@ int main(int argc, char **argv) {
         posix_memalign((void **) &b[i], 256, K * N * sizeof(fptype));
         posix_memalign((void **) &c[i], 256, M * N * sizeof(fptype));
     }
-    int nLoops = 20;
+    int nLoops = 1000;
     auto doWork = [M,N,K,nLoops](fptype * a, fptype * b, fptype * c) {
         for (int i = 0; i < nLoops; ++i) {
                 cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
