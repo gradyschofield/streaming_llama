@@ -1,11 +1,19 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.24)
 project(streaming_llama)
 
 set(CMAKE_CXX_STANDARD 23)
 
 if(APPLE)
     set(EXTRA_CXX_FLAGS "-DACCELERATE_NEW_LAPACK")
+    set(EXTRA_LFLAGS "-framework Accelerate -framework Foundation -framework MetalPerformanceShaders")
+else()
+    set(EXTRA_INCDIRS "${MKLROOT}/include")
+    set(EXTRA_CXX_FLAGS "-DMKL_ILP64  -m64  -I${MKLROOT}/include")
+    #set(EXTRA_LFLAGS "-L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl") # single thread
+    #set(EXTRA_LFLAGS "-L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -ltbb -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl") # "thread building blocks" threading
+    set(EXTRA_LFLAGS "-L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl") # intel openmp  threading
 endif()
+
 
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Werror ${EXTRA_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${EXTRA_CXX_FLAGS}")
@@ -15,7 +23,7 @@ if(NOT APPLE)
 endif()
 set(CMAKE_LINKER_FLAGS_SANMEM "-pie")
 
-include_directories(src/)
+include_directories(src/ ${EXTRA_INCDIRS})
 
 set(COMMON_SRC
         src/Common.h
@@ -28,12 +36,9 @@ set(SRC src/Socket.h
         src/Timer.h)
 
 add_executable(deparallelizer ${COMMON_SRC} src/Deparallelizer.cpp)
+
 add_executable(evaluator ${COMMON_SRC} ${SRC} src/Evaluator.cpp)
-if(APPLE)
-    target_link_libraries(evaluator "-framework Accelerate -framework Foundation -framework MetalPerformanceShaders")
-else()
-    target_link_libraries(evaluator)
-endif()
+target_link_libraries(evaluator ${EXTRA_LFLAGS})
 
 add_executable(testSgemm src/TestSgemm.cpp src/Timer.cpp src/Timer.h)
-target_link_libraries(testSgemm "-framework Accelerate")
+target_link_libraries(testSgemm ${EXTRA_LFLAGS})
