@@ -36,6 +36,8 @@ set(SRC src/Socket.h
         src/Timer.h
         src/Bf16.cpp
         src/Bf16.h
+        src/Checker.cpp
+        src/Checker.h
 )
 
 add_executable(deparallelizer ${COMMON_SRC} src/Deparallelizer.cpp)

@@ -20,6 +20,7 @@ public:
     Bf16 operator/(Bf16 const & t);
     void operator+=(Bf16 const & t);
     void operator*=(Bf16 const & t);
+    void operator*=(float t);
     Bf16 operator-();
     operator float();
 };

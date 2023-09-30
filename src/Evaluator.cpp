@@ -9,6 +9,7 @@
 #include<list>
 #include<map>
 #include<set>
+#include<thread>
 #include<vector>
 
 #ifdef __APPLE__
@@ -18,6 +19,7 @@
 #endif
 
 #include<Bf16.h>
+#include<Checker.h>
 #include<Common.h>
 #include<Socket.h>
 #include<Timer.h>
@@ -36,6 +38,17 @@ using namespace std;
 using namespace Common;
 
 static ostream & logger = cout;
+
+template<>
+unique_ptr<CheckerData> createDataAccessor(Bf16 * ptr, vector<int> dimension, int leadingDimension) {
+    Bf16 * bf16ptr = (Bf16*)ptr;
+    int cdrProduct = accumulate(begin(dimension)+1, end(dimension), 1, std::multiplies<int>());
+    vector<float> data(leadingDimension * cdrProduct);
+    for(int i = 0; i < leadingDimension * cdrProduct; ++i) {
+        data[i] = bf16ptr[i].toFloat();
+    }
+    return make_unique<CheckerData>(std::move(data), dimension, leadingDimension);
+}
 
 template<typename T>
 class Weights {
@@ -234,14 +247,14 @@ vector<pair<string, TensorFileInfo>> getTensorsForLayer(int layer, map<string, T
 template<typename T>
 void layerNormalization(T * weights, T* src, int numRows, int leadingDimension, int seqlen, T normEps) {
     for(int j = 0; j < seqlen; ++j) {
-        T accum = 0;
+        float accum = 0;
         T* ptr = &src[j * leadingDimension];
         for(int i = 0; i < numRows; ++i) {
-            accum += ptr[i] * ptr[i];
+            accum += (float)ptr[i] * (float)ptr[i];
         }
-        T norm = 1.0 / sqrt(accum/numRows + normEps);
+        float norm = 1.0 / sqrt(accum/numRows + normEps);
         for(int i = 0; i < numRows; ++i) {
-            ptr[i] *= norm * weights[i];
+            ptr[i] *= (float)weights[i] * norm;
         }
     }
 }
@@ -273,7 +286,29 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
                  const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
                  const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
                  const int LDC) {
-    //cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
+    vector<float> aBuffer(M * K);
+    vector<float> bBuffer(K * N);
+    vector<float> cBuffer(M * N);
+    int aNumRows = TRANSA == CblasTrans ? K : M;
+    int aNumCols = TRANSA == CblasTrans ? M : K;
+    for(int j = 0; j < aNumCols; ++j) {
+        for(int i = 0; i < aNumRows; ++i) {
+            aBuffer[i + aNumRows*j] = A[i + LDA*j].toFloat();
+        }
+    }
+    for(int j = 0; j < N; ++j) {
+        for (int i = 0; i < K; ++i) {
+            bBuffer[i + K*j] = B[i + LDB*j].toFloat();
+        }
+    }
+    cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K,
+                ALPHA.toFloat(), aBuffer.data(), aNumRows, bBuffer.data(), K,
+                BETA.toFloat(), cBuffer.data(), M);
+    for(int j = 0; j < N; ++j) {
+        for (int i = 0; i < M; ++i) {
+            C[i + LDC*j] = cBuffer[i + M*j];
+        }
+    }
 }
 #else
 #endif
@@ -298,6 +333,7 @@ class TransformerBlock {
     T * ropeFreqs;
     int numHeads;
     int layerIdx;
+    shared_ptr<Checker> checker;
 
 public:
     TransformerBlock(int layer,
@@ -305,9 +341,10 @@ public:
                      int tensorFile,
                      T normEps,
                      T * ropeFreqs,
-                     int numHeads)
+                     int numHeads,
+                     shared_ptr<Checker> checker = nullptr)
         : tensorFile(tensorFile), normEps(normEps), ropeFreqs(ropeFreqs), numHeads(numHeads),
-            layerIdx(layer)
+            layerIdx(layer), checker(checker)
     {
         vector<pair<string, TensorFileInfo>> layerInfos = getTensorsForLayer(layer, tensorFileInfo);
         mapOffset = layerInfos.front().second.offset;
@@ -361,6 +398,12 @@ public:
                               inputCopy.getLeadingDimension(),
                               seqlen,
                               normEps);
+        if(checker) {
+            checker->submitResult(createDataAccessor(inputCopy.getPtr(),
+                                                     {queryWeights.getNumColumns(),
+                                                      seqlen},
+                                                     inputCopy.getLeadingDimension()));
+        }
         //M = queryWeights.numRows, K = queryWeights.numCols or embeddingDimension, N = seqlen
         T* wqOutPtr = transformerBlockScratch->getWQout().getPtr();
         int wqOutLeadingDim = transformerBlockScratch->getWQout().getLeadingDimension();
@@ -401,6 +444,25 @@ public:
                             &wvOutPtr[currentToken * wvOutLeadingDim],
                             wvOutLeadingDim);
 
+        if(checker) {
+            checker->submitResult(createDataAccessor(wqOutPtr,
+                                                     {queryWeights.getNumRows(),
+                                                      seqlen},
+                                                     wqOutLeadingDim));
+            checker->submitResult(createDataAccessor(wqOutPtr,
+                                                     {queryWeights.getNumRows(),
+                                                      seqlen},
+                                                     wqOutLeadingDim));
+            checker->submitResult(createDataAccessor(&wkOutPtr[currentToken * wkOutLeadingDim],
+                                                     {keyWeights.getNumRows(),
+                                                      seqlen},
+                                                     wkOutLeadingDim));
+            checker->submitResult(createDataAccessor(&wvOutPtr[currentToken * wvOutLeadingDim],
+                                                     {valueWeights.getNumRows(),
+                                                      seqlen},
+                                                     wvOutLeadingDim));
+        }
+
         // Apply rotary embedding
         int headDimension = queryWeights.getNumRows() / numHeads;
         auto rotaryPositionEmbedding = [this, headDimension, seqlen](T* basePtr, int leadingDimension) {
@@ -410,11 +472,11 @@ public:
                 for (int head = 0; head < numHeads; ++head) {
                     int k = 0;
                     for (int i = head * headDimension; i < (head + 1) * headDimension; i += 2) {
-                        T re = ptr[i];
-                        T im = ptr[i+1];
-                        T theta = ropeFreqs[k++];
-                        T c = cos(position*theta);
-                        T s = sin(position*theta);
+                        float re = ptr[i];
+                        float im = ptr[i+1];
+                        float theta = ropeFreqs[k++];
+                        float c = cos(position*theta);
+                        float s = sin(position*theta);
                         ptr[i] = re * c - im * s;
                         ptr[i + 1] = re * s + im  * c;
                     }
@@ -423,6 +485,16 @@ public:
         };
         rotaryPositionEmbedding(wqOutPtr, wqOutLeadingDim);
         rotaryPositionEmbedding(&wkOutPtr[currentToken * wkOutLeadingDim], wkOutLeadingDim);
+        if(checker) {
+            checker->submitResult(createDataAccessor(wqOutPtr,
+                                                     {queryWeights.getNumRows(),
+                                                      seqlen},
+                                                     wqOutLeadingDim));
+            checker->submitResult(createDataAccessor(&wkOutPtr[currentToken * wkOutLeadingDim],
+                                                     {keyWeights.getNumRows(),
+                                                      seqlen},
+                                                     wkOutLeadingDim));
+        }
 
         /*
          * Compute K^T * Q for each head of the attention mechanism
@@ -454,22 +526,22 @@ public:
                 for (int i = currentToken + j + 1; i < currentToken + seqlen; ++i) {
                     qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] = -numeric_limits<float>::infinity();
                 }
-                T dimNormalizer = 1.0 / sqrt(headDimension);
+                float dimNormalizer = 1.0 / sqrt(headDimension);
                 for (int i = 0; i < currentToken + seqlen; ++i) {
                     qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] *= dimNormalizer;
                 }
-                T accum = 0;
+                float accum = 0;
                 //Leave maxArg in float since we don't have the max value of Bf16
                 float maxArg = -numeric_limits<float>::max();
                 for (int i = 0; i < currentToken + seqlen; ++i) {
                     maxArg = max(maxArg, (float)qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim]);
                 }
                 for (int i = 0; i < currentToken + seqlen; ++i) {
-                    accum += exp(qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] - T(maxArg));
+                    accum += exp((float)qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] - maxArg);
                 }
-                T normalizer = 1.0 / accum;
+                float normalizer = 1.0 / accum;
                 for (int i = 0; i < currentToken + seqlen; ++i) {
-                    T term = exp(qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] - T(maxArg));
+                    float term = exp((float)qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] - maxArg);
                     qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] = term * normalizer;
                 }
             }
@@ -635,9 +707,12 @@ class NonTransformerWeights {
     off_t mapOffset;
     size_t mapLength;
     void * mapAddress = nullptr;
+    shared_ptr<Checker> checker;
 
 public:
-    NonTransformerWeights(map<string, TensorFileInfo> const & tensorFileInfo, int tensorFile) {
+    NonTransformerWeights(map<string, TensorFileInfo> const & tensorFileInfo, int tensorFile, shared_ptr<Checker> checker = nullptr)
+        : checker(checker)
+    {
         vector<pair<string, TensorFileInfo>> tensorInfos = getNonTransformerBlockTensors(tensorFileInfo);
         mapOffset = tensorInfos.front().second.offset;
         TensorFileInfo const & tfi = tensorInfos.back().second;
@@ -681,16 +756,20 @@ public:
         }
     }
 
-    T * getOutputNormalizers() {
-        return outputNormalizers.getPtr(mapAddress);
+    Weights<T> const & getTokenEmbeddings() {
+        return tokenEmbeddings;
     }
 
-    T * getOutputWeights() const {
-        return outputWeights.getPtr(mapAddress);
+    Weights<T> const & getRopeFreqs() {
+        return ropeFreqs;
     }
 
-    int getOutputLeadingDimension() const {
-        return outputWeights.getLeadingDimension();
+    Weights<T> const & getOutputNormalizers() {
+        return outputNormalizers;
+    }
+
+    Weights<T> const & getOutputWeights() {
+        return outputWeights;
     }
 
     void applyOutputLayer(Scratch<T> in, Scratch<T> out, int seqlen, float normEps) {
@@ -700,6 +779,12 @@ public:
                               in.getLeadingDimension(),
                               seqlen,
                               normEps);
+        if(checker) {
+            checker->submitResult(createDataAccessor(in.getPtr(),
+                                                    {outputWeights.getNumColumns(),
+                                                     seqlen},
+                                                    in.getLeadingDimension()));
+        }
 
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                             outputWeights.getNumRows(), seqlen, outputWeights.getNumColumns(),
@@ -711,6 +796,12 @@ public:
                             0.0,
                             out.getPtr(),
                             out.getLeadingDimension());
+        if(checker) {
+            checker->submitResult(createDataAccessor(out.getPtr(),
+                                                    {outputWeights.getNumRows(),
+                                                     seqlen},
+                                                    out.getLeadingDimension()));
+        }
     }
 };
 
@@ -730,6 +821,7 @@ class LlamaModel : public LLamaModelInterface {
     int numKvHeads;
     T normEps;
     FileStorageFormat fileStorageFormat;
+    shared_ptr<Checker> checker;
 
     map<string, TensorFileInfo> readTensorFileInfoTable(ifstream & ifs) {
         int64_t tensorOffsetTablePos = 0;
@@ -769,7 +861,10 @@ class LlamaModel : public LLamaModelInterface {
 public:
     LlamaModel(string const & tensorFilename,
                int maxSequenceLength,
-               int cacheSize) {
+               int cacheSize,
+               shared_ptr<Checker> checker = nullptr)
+       : checker(checker)
+   {
         ifstream ifs(tensorFilename, ios::binary);
         ifs.seekg(20);
         uint8_t storageType;
@@ -793,14 +888,15 @@ public:
                 tensorFileInfo.at("tok_embeddings.weight").numColumns,
                 layerCount);
         tensorFile = open(tensorFilename.c_str(), O_RDONLY);
-        nonTransformerWeights = make_shared<NonTransformerWeights<T>>(tensorFileInfo, tensorFile);
+        nonTransformerWeights = make_shared<NonTransformerWeights<T>>(tensorFileInfo, tensorFile, checker);
         for(int i = 0; i < layerCount; ++i) {
             transformerBlocks.push_back(make_shared<TransformerBlock<T>>(i,
                                                                       tensorFileInfo,
                                                                       tensorFile,
                                                                       normEps,
                                                                       nonTransformerWeights->getRopeFreqPtr(),
-                                                                      numHeads));
+                                                                      numHeads,
+                                                                      checker));
         }
     }
 
@@ -812,6 +908,12 @@ public:
         int seqlen = tokens.size();
         Scratch<T> out = transformerBlockScratch->takeFreeIoPtr();
         nonTransformerWeights->getTokenEmbedding(tokens, out.getPtr());
+        if(checker) {
+            checker->submitResult(createDataAccessor(out.getPtr(),
+                                                     {nonTransformerWeights->getTokenEmbeddings().getNumRows(),
+                                                      seqlen},
+                                                     out.getLeadingDimension()));
+        }
         for(auto & transformerBlock : transformerBlocks) {
             transformerBlock->mmap();
             out = transformerBlock->evaluate(out,
@@ -828,6 +930,9 @@ public:
                                                 transformerBlockScratch->getOut(),
                                                 1,
                                                 normEps);
+        if(checker) {
+            checker->finish();
+        }
         T * outPtr = transformerBlockScratch->getOut().getPtr();
         for(int i = 0; i < nonTransformerWeights->getVocabularySize(); ++i) {
             ret[i] = outPtr[i];
@@ -837,7 +942,10 @@ public:
 
 };
 
-shared_ptr<LLamaModelInterface> createLlamaModel(string filename, int maxSequenceLength, int cacheSize) {
+shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
+                                                 int maxSequenceLength,
+                                                 int cacheSize,
+                                                 shared_ptr<Checker> checker = nullptr) {
     ifstream ifs(filename);
     ifs.seekg(20);
     uint8_t type;
@@ -846,9 +954,9 @@ shared_ptr<LLamaModelInterface> createLlamaModel(string filename, int maxSequenc
     FileStorageFormat fileStorageFormat = intToFileStorageFormat(type);
     switch(fileStorageFormat) {
         case Common::Bf16Aligned:
-            return make_shared<LlamaModel<Bf16>>(filename, maxSequenceLength, cacheSize);
+            return make_shared<LlamaModel<Bf16>>(filename, maxSequenceLength, cacheSize, checker);
         case Common::Fp32Aligned:
-            return make_shared<LlamaModel<float>>(filename, maxSequenceLength, cacheSize);
+            return make_shared<LlamaModel<float>>(filename, maxSequenceLength, cacheSize, checker);
         case Common::Cuda:
             throw 1;
     }
@@ -859,33 +967,31 @@ shared_ptr<LLamaModelInterface> createLlamaModel(string filename, int maxSequenc
 
 int main(int argc, char ** argv) {
     //logger = ofstream("log");
-#if MANUAL_TESTING == 0
-    Socket socket;
-#endif
-
-#if MANUAL_TESTING==1
-    string filename = "llama_model_7.bin";
-#else
-    string filename = "release/llama_model_7.bin";
-    //string filename = "release/llama_model_notran_emb.bin";
-#endif
-    ifstream ifs(filename, ios::binary);
-    if(ifs.fail()) {
-        logger << "Could not load llama model.\n";
-        return 1;
-    }
     int maxSequenceLength = 100; // 19
     int cacheSize = 500; // 0
-    shared_ptr<LLamaModelInterface> model = createLlamaModel(filename, maxSequenceLength, cacheSize);
-#if MANUAL_TESTING == 1
-    vector<float> logits = model->evaluate({1,518,25580,29962,6028,366,2436,263,22172,3186,1824,297,315,1817,29973,29961,29914,25580,29962});
-    for(float t : logits) {
-        cout << t << " ";
+#if MANUAL_TESTING==1
+    string filename1 = "llama_model_7.bin";
+    string filename2 = "llama_model_7_bf16.bin";
+    float bfloat16Tolerance = 2 * pow(2,-7);
+    shared_ptr<Checker> checker = make_shared<Checker>(bfloat16Tolerance);
+    shared_ptr<LLamaModelInterface> model1 = createLlamaModel(filename1, maxSequenceLength, cacheSize, checker);
+    shared_ptr<LLamaModelInterface> model2 = createLlamaModel(filename2, maxSequenceLength, cacheSize, checker);
+    auto runEvaluate = [](shared_ptr<LLamaModelInterface> model, vector<float> & ret) {
+        ret = model->evaluate({1,518,25580,29962,6028,366,2436,263,22172,3186,1824,297,315,1817,29973,29961,29914,25580,29962});
+    };
+    vector<float> logits1, logits2;
+    vector<thread> threads;
+    threads.emplace_back(runEvaluate, model1, std::ref(logits1));
+    threads.emplace_back(runEvaluate, model2, std::ref(logits2));
+    for(thread & t : threads) t.join();
+    for(int i = 0; i < min(100, (int)logits1.size()); ++i) {
+        cout << i << ": " << logits1[i] << " " << logits2[i] << " ";
     }
-    return 0;
-#endif
-
-#if MANUAL_TESTING == 0
+#else
+    Socket socket;
+    string filename = "release/llama_model_7_bf16.bin";
+    //string filename = "release/llama_model_notran_emb.bin";
+    shared_ptr<LLamaModelInterface> model = createLlamaModel(filename, maxSequenceLength, cacheSize);
     while (true) {
         int numTokens = 0;
         vector<int> tokens;
@@ -904,22 +1010,5 @@ int main(int argc, char ** argv) {
         socket.sendInt(-1);
     }
 #endif
-
-    return 0;
-
-
-    /*
-    list<int> tokenIdx{5000};
-    Timer timer;
-    model.evaluate(tokenIdx);
-    logger << timer.elapsed() << " sec for one token\n";
-    timer.start();
-    int count = 10;
-    for(int i = 0; i < count; ++i) {
-        list<int> t{rand() % 32000};
-        model.evaluate(t);
-    }
-    logger << timer.elapsed()/count << " sec per token\n";
-     */
     return 0;
 }

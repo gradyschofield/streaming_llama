@@ -16,7 +16,7 @@ Bf16::Bf16(float x) {
     } t;
     t.x = x;
     t.i >>= 16;
-    this->x = t.x;
+    this->x = t.i;
 }
 
 float Bf16::toFloat() const {
@@ -55,6 +55,10 @@ void Bf16::operator+=(Bf16 const & t) {
 
 void Bf16::operator*=(Bf16 const & t) {
     x = Bf16(this->toFloat() * t.toFloat()).x;
+}
+
+void Bf16::operator*=(float t) {
+    x = Bf16(this->toFloat() * t).x;
 }
 
 Bf16 Bf16::operator-() {
