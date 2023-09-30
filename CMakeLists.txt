@@ -33,7 +33,10 @@ set(COMMON_SRC
 set(SRC src/Socket.h
         src/Socket.cpp
         src/Timer.cpp
-        src/Timer.h)
+        src/Timer.h
+        src/Bf16.cpp
+        src/Bf16.h
+)
 
 add_executable(deparallelizer ${COMMON_SRC} src/Deparallelizer.cpp)
 

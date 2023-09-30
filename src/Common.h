@@ -14,6 +14,15 @@ using namespace std;
 
 namespace Common {
 
+    enum FileStorageFormat {
+        Fp32Aligned,
+        Bf16Aligned,
+        Cuda
+    };
+
+    uint8_t fileStorageFormatToInt(FileStorageFormat fileStorageFormat);
+    FileStorageFormat intToFileStorageFormat(uint8_t i);
+
     struct TensorFileInfo {
         int64_t offset;
         int numRows;

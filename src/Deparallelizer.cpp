@@ -16,9 +16,7 @@
 using namespace std;
 using namespace Common;
 
-// TODO: read the params.json file to get n_heads, n_kv_heads and norm_eps
-// TODO: optionally convert bfloat16 to fp32 and use 512 bit leading dimension
-// TODO: add a new table (transformer block level) that gives the file offset and length of each transfer block, will be used with mmap
+// TODO: move map from output format to int to common.h/cpp, read otuput format in Evaluator and deal with it properl
 
 map<string, int64_t> readTensorOffsetTable(ifstream & ifs) {
     int64_t tensorOffsetTablePos;
@@ -44,11 +42,6 @@ enum ParallelizationLayout {
     SplitColumns,
     SplitRows,
     Duplicated
-};
-
-enum OutputFormat {
-    Fp32Aligned,
-    Cuda
 };
 
 unordered_map<string, ParallelizationLayout> TENSOR_LAYOUT {
@@ -90,9 +83,9 @@ struct Fp32 {
 
 template<typename T>
 pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> const & fragments,
-                                ParallelizationLayout parallelizationLayout,
-                                OutputFormat outputFormat,
-                                ifstream & ifs, ofstream & ofs) {
+                                                        ParallelizationLayout parallelizationLayout,
+                                                        FileStorageFormat fileStorageFormat,
+                                                        ifstream & ifs, ofstream & ofs) {
     int64_t position = ofs.tellp();
     int numRows = 0;
     int numColumns = 0;
@@ -114,12 +107,12 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> con
         }
     }
     int leadingDim = 0;
-    if (outputFormat == Fp32Aligned) {
+    if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
         leadingDim = findAlignment(numRows, 64);
-    } else if (outputFormat == Cuda) {
+    } else if (fileStorageFormat == Cuda) {
         leadingDim = numRows;
     } else {
-        cout << "Need to handle this outputFormat in consolidateTensorFragments\n";
+        cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
         exit(1);
     }
     int largestSize = 0;
@@ -159,12 +152,12 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> con
         int newNumRows = numColumns;
         int newNumColumns = numRows;
         int newLeadingDim = 0;
-        if (outputFormat == Fp32Aligned) {
+        if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
             newLeadingDim = findAlignment(newNumRows, 64);
-        } else if (outputFormat == Cuda) {
+        } else if (fileStorageFormat == Cuda) {
             newLeadingDim = newNumRows;
         } else {
-            cout << "Need to handle this outputFormat in consolidateTensorFragments\n";
+            cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
             exit(1);
         }
         vector<T> newStorage(newLeadingDim * newNumColumns);
@@ -188,10 +181,10 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> con
 
 template<typename T>
 pair<string, TensorFileInfo> writeNonParallelizedTensor(string const & tensorName,
-                                                  int64_t tensorOffset,
-                                                  OutputFormat outputFormat,
-                                                  ifstream & ifs,
-                                                  ofstream & ofs) {
+                                                        int64_t tensorOffset,
+                                                        FileStorageFormat fileStorageFormat,
+                                                        ifstream & ifs,
+                                                        ofstream & ofs) {
     int64_t position = ofs.tellp();
     int rows, cols;
     ifs.seekg(tensorOffset);
@@ -200,12 +193,12 @@ pair<string, TensorFileInfo> writeNonParallelizedTensor(string const & tensorNam
     vector<uint16_t> tmp(rows*cols);
     ifs.read((char *) tmp.data(), rows * cols * 2);
     int leadingDim = 0;
-    if (outputFormat == Fp32Aligned) {
+    if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
         leadingDim = findAlignment(rows, 64);
-    } else if (outputFormat == Cuda) {
+    } else if (fileStorageFormat == Cuda) {
         leadingDim = rows;
     } else {
-        cout << "Need to handle this outputFormat in consolidateTensorFragments\n";
+        cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
         exit(1);
     }
     vector<T> storage(leadingDim*cols);
@@ -305,13 +298,32 @@ void transferParamsToOutFile(ifstream & ifs, ofstream & ofs) {
     ofs.write((char*) &norm_eps, 4);
 }
 
+void writeOutputFormat(ofstream & ofs, FileStorageFormat fileStorageFormat) {
+    uint8_t dummy = fileStorageFormatToInt(fileStorageFormat);
+    ofs.write((char*)&dummy, 1);
+}
+
+FileStorageFormat stringToFileStorageFormat(string s) {
+    if(s == "bf16") {
+        return Bf16Aligned;
+    } else if(s == "fp32") {
+        return Fp32Aligned;
+    } else if(s == "cuda") {
+        return Cuda;
+    } else {
+        throw 1;
+    }
+}
+
 int main(int argc, char ** argv) {
-    ifstream ifs(argv[1]);
+    ifstream ifs(argv[2]);
     ofstream ofs("llama_model.bin");
     int64_t dummy = 0;
+    FileStorageFormat fileStorageFormat = stringToFileStorageFormat(argv[1]);
     ofs.write((char *) &dummy, 8);
     map<string, int64_t> offsetTable = readTensorOffsetTable(ifs);
     transferParamsToOutFile(ifs, ofs);
+    writeOutputFormat(ofs, fileStorageFormat);
     list<pair<string, TensorFileInfo>> tensorInfoTable;
     list<string> tensorNames = getTensorNamesInOrder(offsetTable);
     for(string const & tensorName : tensorNames) {
@@ -332,8 +344,14 @@ int main(int argc, char ** argv) {
             if (!isParallel) {
                 //Should be able to write this data and forget about parallel copies.  But do confirm that the parallel
                 //copies are identical or close.
-                auto offsetInfo = writeNonParallelizedTensor<Fp32>(tensorName, tensorOffset,
-                                                                   Fp32Aligned, ifs, ofs);
+                pair<string, TensorFileInfo> offsetInfo;
+                if(fileStorageFormat == Fp32Aligned) {
+                    offsetInfo = writeNonParallelizedTensor<Fp32>(tensorName, tensorOffset,
+                                                                  fileStorageFormat, ifs, ofs);
+                } else {
+                    offsetInfo = writeNonParallelizedTensor<uint16_t>(tensorName, tensorOffset,
+                                                                  fileStorageFormat, ifs, ofs);
+                }
                 tensorInfoTable.push_back(std::move(offsetInfo));
             } else {
                 string tensorNameNoPrefix = tensorName.substr(3);
@@ -345,8 +363,14 @@ int main(int argc, char ** argv) {
                         fragments.emplace(p2);
                     }
                 }
-                auto offsetInfo = consolidateTensorFragments<Fp32>(fragments, parallelizationLayout,
-                                                                   Fp32Aligned, ifs, ofs);
+                pair<string, TensorFileInfo> offsetInfo;
+                if(fileStorageFormat == Fp32Aligned) {
+                    offsetInfo = consolidateTensorFragments<Fp32>(fragments, parallelizationLayout,
+                                                                  fileStorageFormat, ifs, ofs);
+                } else {
+                    offsetInfo = consolidateTensorFragments<uint16_t>(fragments, parallelizationLayout,
+                                                                  fileStorageFormat, ifs, ofs);
+                }
                 tensorInfoTable.push_back(std::move(offsetInfo));
             }
         }
