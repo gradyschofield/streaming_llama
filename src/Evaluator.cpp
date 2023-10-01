@@ -259,7 +259,6 @@ void layerNormalization(T * weights, T* src, int numRows, int leadingDimension, 
     }
 }
 
-#ifdef __APPLE__
 
 template<typename T>
 void multiplyMatrices(const enum CBLAS_ORDER ORDER,
@@ -279,6 +278,7 @@ void multiplyMatrices<float>(const enum CBLAS_ORDER ORDER,
     cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
 }
 
+#ifdef __APPLE__
 template<>
 void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
                  const enum CBLAS_TRANSPOSE TRANSA,
@@ -311,6 +311,14 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
     }
 }
 #else
+void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
+                 const enum CBLAS_TRANSPOSE TRANSA,
+                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                 const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
+                 const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
+                 const int LDC) {
+    cblas_gemm_bf16_bf16_pack(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
+}
 #endif
 
 template<typename T>

@@ -2,12 +2,16 @@ from codellama.tokenizer import Tokenizer
 from localsock import Socket
 import subprocess
 from codellama.generation import get_token
+import os
 import signal
 import sys
 
 B_INST, E_INST = "[INST]", "[/INST]"
 
 if __name__ == "__main__":
+    socketPath = '/tmp/codellama_evaluator.sock'
+    if os.path.exists(socketPath):
+        os.remove(socketPath)
     evaluator = subprocess.Popen("release/evaluator")
 
     tokenizer_path='/Users/grady/src/codellama/CodeLlama-7b-Instruct/tokenizer.model'
