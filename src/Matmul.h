@@ -11,11 +11,21 @@
 #include<mkl.h>
 #endif
 
+#ifdef __APPLE__
 template<typename T>
 void multiplyMatrices(const enum CBLAS_ORDER ORDER,
                       const enum CBLAS_TRANSPOSE TRANSA,
                       const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
                       const int K, const T ALPHA, const T * A, const int LDA,
-                      const T * B, const int LDB, const T BETA, T * _Nullable C,
+                      const T * B, const int LDB, const T BETA, T * C,
                       const int LDC);
+#else
+template<typename T>
+void multiplyMatrices(const enum CBLAS_LAYOUT ORDER,
+                      const enum CBLAS_TRANSPOSE TRANSA,
+                      const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                      const int K, const T ALPHA, const T * A, const int LDA,
+                      const T * B, const int LDB, const T BETA, T * C,
+                      const int LDC);
+#endif
 #endif //STREAMING_LLAMA_MATMUL_H
