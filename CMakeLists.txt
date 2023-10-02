@@ -38,6 +38,11 @@ set(SRC src/Socket.h
         src/Bf16.h
         src/Checker.cpp
         src/Checker.h
+        src/Scratch.h
+        src/TransformerBlockScratch.h
+        src/Weights.h
+        src/Matmul.cpp
+        src/Matmul.h
 )
 
 add_executable(deparallelizer ${COMMON_SRC} src/Deparallelizer.cpp)

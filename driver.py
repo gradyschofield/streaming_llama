@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from codellama.tokenizer import Tokenizer
 from localsock import Socket
 import subprocess

@@ -10,26 +10,22 @@
 #include<map>
 #include<set>
 #include<thread>
+#include<unordered_map>
 #include<vector>
-
-#ifdef __APPLE__
-#include<Accelerate/Accelerate.h>
-#else
-#include<mkl.h>
-#endif
 
 #include<Bf16.h>
 #include<Checker.h>
 #include<Common.h>
+#include<Matmul.h>
+#include<Scratch.h>
 #include<Socket.h>
 #include<Timer.h>
+#include<TransformerBlockScratch.h>
+#include<Weights.h>
 
 /*
- * TODO confirm nothing broke in fp32 on mac
- * TODO option to run deparallelizer to output bfloat16
- * TODO copy Bf16 matrices to fp32 on multiplyMatrices call on Macos
- * TODO call sgemm for bfloat16 when on intel
  * TODO code cleanup
+ * TODO full Checker verification in the transformer block
  * TODO Cuda impelmentation
  * TODO handle different number of kv heads for largest model
  */
@@ -38,195 +34,6 @@ using namespace std;
 using namespace Common;
 
 static ostream & logger = cout;
-
-template<>
-unique_ptr<CheckerData> createDataAccessor(Bf16 * ptr, vector<int> dimension, int leadingDimension) {
-    Bf16 * bf16ptr = (Bf16*)ptr;
-    int cdrProduct = accumulate(begin(dimension)+1, end(dimension), 1, std::multiplies<int>());
-    vector<float> data(leadingDimension * cdrProduct);
-    for(int i = 0; i < leadingDimension * cdrProduct; ++i) {
-        data[i] = bf16ptr[i].toFloat();
-    }
-    return make_unique<CheckerData>(std::move(data), dimension, leadingDimension);
-}
-
-template<typename T>
-class Weights {
-    int64_t offsetIntoBlock;
-    int numRows;
-    int numColumns;
-    int leadingDimension;
-
-public:
-    Weights() {
-    }
-
-    Weights(int64_t mapOffset, TensorFileInfo const & tfi)
-        :   offsetIntoBlock(tfi.offset - mapOffset),
-            numRows(tfi.numRows),
-            numColumns(tfi.numColumns),
-            leadingDimension(tfi.leadingDimension)
-    {
-    }
-
-    T * getPtr(void* base) const {
-        return (T*)((uint8_t*)base + offsetIntoBlock);
-    }
-
-    int getNumRows() const {
-        return numRows;
-    }
-
-    int getNumColumns() const {
-        return numColumns;
-    }
-
-    int getLeadingDimension() const {
-        return leadingDimension;
-    }
-};
-
-template<typename T>
-class Scratch {
-    T * ptr;
-    int leadingDimension;
-public:
-    Scratch(){
-    }
-
-    template<typename Allocator>
-    Scratch(Allocator && alignedAlloc, int alignmentBytes, int leadingDimension, int numColumns)
-        : leadingDimension(leadingDimension)
-    {
-        alignedAlloc((void**)&ptr, alignmentBytes, leadingDimension * numColumns * sizeof(T));
-    }
-
-    T * getPtr() {
-        return ptr;
-    }
-
-    int getLeadingDimension() {
-        return leadingDimension;
-    }
-};
-
-template<typename T>
-class TransformerBlockScratch {
-    int freeIo = 0;
-    Scratch<T> ioPtr[2];
-    Scratch<T> inputCopyBuffer;
-    Scratch<T> wQout;
-    vector<Scratch<T>> wKout;
-    vector<Scratch<T>> wVout;
-    Scratch<T> wOout;
-    Scratch<T> wOoutCopy;
-    Scratch<T> qkOut;
-    Scratch<T> vqkOut;
-    Scratch<T> w1Out;
-    Scratch<T> w2Out;
-    Scratch<T> w3Out;
-    Scratch<T> out;
-
-public:
-    TransformerBlockScratch(int maxSequenceLength,
-                            int cacheSize,
-                            int numHeads,
-                            int embeddingLeadingDim,
-                            int qLeadingDim,
-                            int kLeadingDim,
-                            int vLeadingDim,
-                            int oLeadingDim,
-                            int w1LeadingDim,
-                            int w2LeadingDim,
-                            int w3LeadingDim,
-                            int vocabularySize,
-                            int numLayers) {
-        size_t totalAlloc = 0;
-        auto alignedAlloc = [&totalAlloc](void ** p, int alignment, size_t size) {
-            totalAlloc += size;
-            posix_memalign(p, alignment, size);
-        };
-        ioPtr[0] = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
-        ioPtr[1] = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
-        inputCopyBuffer = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
-
-        //TODO The heads within each matrix aren't aligned.  Does it even matter?  Some experimentation is needed.
-        wQout = Scratch<T>(alignedAlloc, 64, qLeadingDim, maxSequenceLength);
-        for(int i = 0; i < numLayers; ++i) {
-            wKout.push_back(Scratch<T>(alignedAlloc, 64, kLeadingDim, cacheSize + maxSequenceLength));
-            wVout.push_back(Scratch<T>(alignedAlloc, 64, vLeadingDim, cacheSize + maxSequenceLength));
-        }
-        wOout = Scratch<T>(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
-        wOoutCopy = Scratch<T>(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
-
-        int qkRows = numHeads * (cacheSize + maxSequenceLength);
-        int qkLeadingDim = findAlignment(qkRows, 64);
-        qkOut = Scratch<T>(alignedAlloc, 64, qkLeadingDim, maxSequenceLength);
-        vqkOut = Scratch<T>(alignedAlloc, 64, vLeadingDim , maxSequenceLength);
-
-        w1Out = Scratch<T>(alignedAlloc, 64, w1LeadingDim, maxSequenceLength);
-        w2Out = Scratch<T>(alignedAlloc, 64, w2LeadingDim, maxSequenceLength);
-        w3Out = Scratch<T>(alignedAlloc, 64, w3LeadingDim, maxSequenceLength);
-
-        int outLeadingDim = findAlignment(vocabularySize, 64);
-        out = Scratch<T>(alignedAlloc, 64, outLeadingDim, 1);
-        logger << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
-    }
-
-    Scratch<T> takeFreeIoPtr() {
-        Scratch<T> tmp = ioPtr[freeIo];
-        freeIo = (freeIo + 1) % 2;
-        return tmp;
-    }
-
-    Scratch<T> getInputCopyBuffer() {
-        return inputCopyBuffer;
-    }
-
-    Scratch<T> getWQout() {
-        return wQout;
-    }
-
-    Scratch<T> getWKout(int layerIdx) {
-        return wKout[layerIdx];
-    }
-
-    Scratch<T> getWVout(int layerIdx) {
-        return wVout[layerIdx];
-    }
-
-    Scratch<T> getQKout() {
-        return qkOut;
-    }
-
-    Scratch<T> getVQKout() {
-        return vqkOut;
-    }
-
-    Scratch<T> getWOout() {
-        return wOout;
-    }
-
-    Scratch<T> getWOoutCopy() {
-        return wOoutCopy;
-    }
-
-    Scratch<T> getW1Out() {
-        return w1Out;
-    }
-
-    Scratch<T> getW2Out() {
-        return w2Out;
-    }
-
-    Scratch<T> getW3Out() {
-        return w3Out;
-    }
-
-    Scratch<T> getOut() {
-        return out;
-    }
-};
 
 vector<pair<string, TensorFileInfo>> getTensorsForLayer(int layer, map<string, TensorFileInfo> const & tensorFileInfo) {
     stringstream sstr;
@@ -259,67 +66,6 @@ void layerNormalization(T * weights, T* src, int numRows, int leadingDimension, 
     }
 }
 
-
-template<typename T>
-void multiplyMatrices(const enum CBLAS_ORDER ORDER,
-                 const enum CBLAS_TRANSPOSE TRANSA,
-                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                 const int K, const T ALPHA, const T * A, const int LDA,
-                 const T * B, const int LDB, const T BETA, T * _Nullable C,
-                 const int LDC);
-
-template<>
-void multiplyMatrices<float>(const enum CBLAS_ORDER ORDER,
-                 const enum CBLAS_TRANSPOSE TRANSA,
-                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                 const int K, const float ALPHA, const float * A, const int LDA,
-                 const float * B, const int LDB, const float BETA, float * C,
-                 const int LDC) {
-    cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
-}
-
-#ifdef __APPLE__
-template<>
-void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
-                 const enum CBLAS_TRANSPOSE TRANSA,
-                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                 const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
-                 const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
-                 const int LDC) {
-    vector<float> aBuffer(M * K);
-    vector<float> bBuffer(K * N);
-    vector<float> cBuffer(M * N);
-    int aNumRows = TRANSA == CblasTrans ? K : M;
-    int aNumCols = TRANSA == CblasTrans ? M : K;
-    for(int j = 0; j < aNumCols; ++j) {
-        for(int i = 0; i < aNumRows; ++i) {
-            aBuffer[i + aNumRows*j] = A[i + LDA*j].toFloat();
-        }
-    }
-    for(int j = 0; j < N; ++j) {
-        for (int i = 0; i < K; ++i) {
-            bBuffer[i + K*j] = B[i + LDB*j].toFloat();
-        }
-    }
-    cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K,
-                ALPHA.toFloat(), aBuffer.data(), aNumRows, bBuffer.data(), K,
-                BETA.toFloat(), cBuffer.data(), M);
-    for(int j = 0; j < N; ++j) {
-        for (int i = 0; i < M; ++i) {
-            C[i + LDC*j] = cBuffer[i + M*j];
-        }
-    }
-}
-#else
-void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
-                 const enum CBLAS_TRANSPOSE TRANSA,
-                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                 const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
-                 const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
-                 const int LDC) {
-    cblas_gemm_bf16_bf16_pack(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
-}
-#endif
 
 template<typename T>
 class TransformerBlock {
@@ -993,7 +739,7 @@ int main(int argc, char ** argv) {
     threads.emplace_back(runEvaluate, model2, std::ref(logits2));
     for(thread & t : threads) t.join();
     for(int i = 0; i < min(100, (int)logits1.size()); ++i) {
-        cout << i << ": " << logits1[i] << " " << logits2[i] << " ";
+        cout << i << ": " << logits1[i] << " " << logits2[i] << "\n";
     }
 #else
     Socket socket;
