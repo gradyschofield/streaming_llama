@@ -6,6 +6,7 @@
 #define STREAMING_LLAMA_CHECKER_H
 
 #include<barrier>
+#include<cmath>
 #include<cstring>
 #include<functional>
 #include<numeric>
