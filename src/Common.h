@@ -7,6 +7,9 @@
 
 #include<cstdint>
 #include<fstream>
+#include<map>
+#include<string>
+#include<vector>
 
 using namespace std;
 
@@ -29,6 +32,9 @@ namespace Common {
         int numColumns;
         int leadingDimension;
     };
+    vector<pair<string, TensorFileInfo>> getTensorsForLayer(int layer, map<string, TensorFileInfo> const & tensorFileInfo);
+    vector<pair<string, TensorFileInfo>> getNonTransformerBlockTensors(map<string, TensorFileInfo> const & tensorFileInfo);
+    int getLayerCount(map<string, TensorFileInfo> const & tensorFileInfo);
 
     int findAlignment(int elements, int alignmentBytes);
 }

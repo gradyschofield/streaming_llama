@@ -24,9 +24,12 @@
 #include<Weights.h>
 
 /*
+ * TODO Cuda benchmark gemmEx
  * TODO code cleanup
  * TODO full Checker verification in the transformer block
- * TODO Cuda impelmentation
+ * TODO Cuda scratch buffers
+ * TODO Cuda matrixMultiply
+ * TODO Cuda kernels layer norm, toary embedding, swilu
  * TODO handle different number of kv heads for largest model
  */
 
@@ -34,22 +37,6 @@ using namespace std;
 using namespace Common;
 
 static ostream & logger = cout;
-
-vector<pair<string, TensorFileInfo>> getTensorsForLayer(int layer, map<string, TensorFileInfo> const & tensorFileInfo) {
-    stringstream sstr;
-    sstr << "layers." << layer;
-    string prefix = sstr.str();
-    vector<pair<string, TensorFileInfo>> ret;
-    for(auto & p : tensorFileInfo) {
-        if(p.first.starts_with(prefix)) {
-            ret.push_back(p);
-        }
-    }
-    sort(begin(ret), end(ret), [](auto & x, auto & y) {
-        return x.second.offset < y.second.offset;
-    });
-    return ret;
-}
 
 template<typename T>
 void layerNormalization(T * weights, T* src, int numRows, int leadingDimension, int seqlen, T normEps) {
@@ -65,7 +52,6 @@ void layerNormalization(T * weights, T* src, int numRows, int leadingDimension, 
         }
     }
 }
-
 
 template<typename T>
 class TransformerBlock {
@@ -429,29 +415,6 @@ public:
     }
 };
 
-int getLayerCount(map<string, TensorFileInfo> const & tensorFileInfo) {
-    set<string> layers;
-    for(auto & p : tensorFileInfo) {
-        if(p.first.starts_with("layers.")) {
-            layers.insert(p.first.substr(7, p.first.find('.', 7)-7));
-        }
-    }
-    return layers.size();
-}
-
-vector<pair<string, TensorFileInfo>> getNonTransformerBlockTensors(map<string, TensorFileInfo> const & tensorFileInfo) {
-    vector<pair<string, TensorFileInfo>> ret;
-    for(auto & p : tensorFileInfo) {
-        if(!p.first.starts_with("layers.")) {
-            ret.push_back(p);
-        }
-    }
-    sort(begin(ret), end(ret), [](auto & x, auto & y) {
-        return x.second.offset < y.second.offset;
-    });
-    return ret;
-}
-
 template<typename T>
 class NonTransformerWeights {
     Weights<T> tokenEmbeddings;
@@ -714,6 +677,7 @@ shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
         case Common::Cuda:
             throw 1;
     }
+    return nullptr; // unreachable
 }
 
 

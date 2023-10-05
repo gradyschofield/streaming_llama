@@ -119,10 +119,13 @@ void multiplyMatrices<Bf16>(const enum CBLAS_LAYOUT ORDER,
                  const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
                  const int LDC) {
     ScratchBuffer cScratch = getScratch(M, N);
-    cblas_gemm_bf16bf16fp32(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, cScratch.buffer, LDC);
+    cblas_gemm_bf16bf16f32(ORDER, TRANSA, TRANSB, M, N, K,
+                           ALPHA.toFloat(), (uint16_t const *)A, LDA,
+                           (uint16_t const *)B, LDB,
+                           BETA.toFloat(), cScratch.buffer, cScratch.leadingDimension);
     for(int j = 0; j < N; ++j) {
         for (int i = 0; i < M; ++i) {
-            C[i + LDC*j] = cBuffer[i + cScratch.leadingDimension*j];
+            C[i + LDC*j] = cScratch.buffer[i + cScratch.leadingDimension*j];
         }
     }
     returnScratch(cScratch);

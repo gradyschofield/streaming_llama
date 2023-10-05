@@ -91,7 +91,7 @@ void Socket::sendFloatArray(vector<float> tokens) {
     vector<char> buffer(4 * tokens.size());
     memcpy(buffer.data(), tokens.data(), 4*tokens.size());
     int numSent = 0;
-    while(numSent < 4 * tokens.size()) {
+    while(numSent < 4 * (int)tokens.size()) {
         int num = send(clientSocket, &buffer[numSent], 4*tokens.size() - numSent, 0);
         if(num <= 0) throw runtime_error("Client disconnected");
         numSent += num;
