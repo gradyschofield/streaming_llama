@@ -6,6 +6,7 @@
 #define STREAMING_LLAMA_TRANSFORMERBLOCKSCRATCH_H
 
 #include<cstdlib>
+#include<functional>
 #include<iostream>
 
 #include<Common.h>
@@ -13,6 +14,9 @@
 
 using namespace Common;
 using namespace std;
+
+template<typename T>
+void allocateScratch(size_t &totalAlloc, void ** p, int alignment, size_t size);
 
 template<typename T>
 class TransformerBlockScratch {
@@ -46,10 +50,8 @@ public:
                             int vocabularySize,
                             int numLayers) {
         size_t totalAlloc = 0;
-        auto alignedAlloc = [&totalAlloc](void ** p, int alignment, size_t size) {
-            totalAlloc += size;
-            posix_memalign(p, alignment, size);
-        };
+        using namespace std::placeholders;
+        auto alignedAlloc = bind(allocateScratch<T>, ref(totalAlloc), _1, _2, _3);
         ioPtr[0] = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
         ioPtr[1] = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
         inputCopyBuffer = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
