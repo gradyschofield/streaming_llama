@@ -53,7 +53,7 @@ void layerNormalization(T * weights, T* src, int numRows, int leadingDimension, 
     }
 }
 
-template<typename T>
+template<typename T, Processor P>
 class TransformerBlock {
     Weights<T> queryWeights;
     Weights<T> keyWeights;
@@ -126,7 +126,7 @@ public:
 
     Scratch<T> evaluate(Scratch<T> in,
                         int seqlen,
-                        shared_ptr<TransformerBlockScratch<T>> transformerBlockScratch) {
+                        shared_ptr<TransformerBlockScratch<T, P>> transformerBlockScratch) {
         Scratch<T> inputCopy = transformerBlockScratch->getInputCopyBuffer();
         T* inPtr = in.getPtr();
         memcpy(inputCopy.getPtr(), inPtr, seqlen * in.getLeadingDimension() * sizeof(T));
@@ -528,12 +528,12 @@ public:
     virtual ~LLamaModelInterface() {}
 };
 
-template<typename T>
+template<typename T, Processor P>
 class LlamaModel : public LLamaModelInterface {
     shared_ptr<NonTransformerWeights<T>> nonTransformerWeights;
-    vector<shared_ptr<TransformerBlock<T>>> transformerBlocks;
+    vector<shared_ptr<TransformerBlock<T, P>>> transformerBlocks;
     int tensorFile;
-    shared_ptr<TransformerBlockScratch<T>> transformerBlockScratch;
+    shared_ptr<TransformerBlockScratch<T, P>> transformerBlockScratch;
     int numHeads;
     int numKvHeads;
     T normEps;
@@ -592,7 +592,7 @@ public:
         ifs.close();
 
         int layerCount = getLayerCount(tensorFileInfo);
-        transformerBlockScratch = make_shared<TransformerBlockScratch<T>>(
+        transformerBlockScratch = make_shared<TransformerBlockScratch<T, P>>(
                 maxSequenceLength, cacheSize, numHeads,
                 tensorFileInfo.at("tok_embeddings.weight").leadingDimension,
                 tensorFileInfo.at("layers.0.attention.wq.weight").leadingDimension,
@@ -607,13 +607,13 @@ public:
         tensorFile = open(tensorFilename.c_str(), O_RDONLY);
         nonTransformerWeights = make_shared<NonTransformerWeights<T>>(tensorFileInfo, tensorFile, checker);
         for(int i = 0; i < layerCount; ++i) {
-            transformerBlocks.push_back(make_shared<TransformerBlock<T>>(i,
-                                                                      tensorFileInfo,
-                                                                      tensorFile,
-                                                                      normEps,
-                                                                      nonTransformerWeights->getRopeFreqPtr(),
-                                                                      numHeads,
-                                                                      checker));
+            transformerBlocks.push_back(make_shared<TransformerBlock<T, P>>(i,
+                                                                            tensorFileInfo,
+                                                                            tensorFile,
+                                                                            normEps,
+                                                                            nonTransformerWeights->getRopeFreqPtr(),
+                                                                            numHeads,
+                                                                            checker));
         }
     }
 
@@ -659,6 +659,7 @@ public:
 
 };
 
+template<Processor P>
 shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
                                                  int maxSequenceLength,
                                                  int cacheSize,
@@ -671,11 +672,9 @@ shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
     FileStorageFormat fileStorageFormat = intToFileStorageFormat(type);
     switch(fileStorageFormat) {
         case Common::Bf16Aligned:
-            return make_shared<LlamaModel<Bf16>>(filename, maxSequenceLength, cacheSize, checker);
+            return make_shared<LlamaModel<Bf16, P>>(filename, maxSequenceLength, cacheSize, checker);
         case Common::Fp32Aligned:
-            return make_shared<LlamaModel<float>>(filename, maxSequenceLength, cacheSize, checker);
-        case Common::Cuda:
-            throw 1;
+            return make_shared<LlamaModel<float, P>>(filename, maxSequenceLength, cacheSize, checker);
     }
     return nullptr; // unreachable
 }
@@ -692,8 +691,8 @@ int main(int argc, char ** argv) {
     string filename2 = "llama_model_7_bf16.bin";
     float bfloat16Tolerance = 2 * pow(2,-7);
     shared_ptr<Checker> checker = make_shared<Checker>(bfloat16Tolerance);
-    shared_ptr<LLamaModelInterface> model1 = createLlamaModel(filename1, maxSequenceLength, cacheSize, checker);
-    shared_ptr<LLamaModelInterface> model2 = createLlamaModel(filename2, maxSequenceLength, cacheSize, checker);
+    shared_ptr<LLamaModelInterface> model1 = createLlamaModel<Cpu>(filename1, maxSequenceLength, cacheSize, checker);
+    shared_ptr<LLamaModelInterface> model2 = createLlamaModel<Cpu>(filename2, maxSequenceLength, cacheSize, checker);
     auto runEvaluate = [](shared_ptr<LLamaModelInterface> model, vector<float> & ret) {
         ret = model->evaluate({1,518,25580,29962,6028,366,2436,263,22172,3186,1824,297,315,1817,29973,29961,29914,25580,29962});
     };
@@ -709,7 +708,7 @@ int main(int argc, char ** argv) {
     Socket socket;
     string filename = "release/llama_model_7_bf16.bin";
     //string filename = "release/llama_model_notran_emb.bin";
-    shared_ptr<LLamaModelInterface> model = createLlamaModel(filename, maxSequenceLength, cacheSize);
+    shared_ptr<LLamaModelInterface> model = createLlamaModel<Cpu>(filename, maxSequenceLength, cacheSize);
     while (true) {
         int numTokens = 0;
         vector<int> tokens;

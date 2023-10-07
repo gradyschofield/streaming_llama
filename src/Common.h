@@ -19,7 +19,11 @@ namespace Common {
 
     enum FileStorageFormat {
         Fp32Aligned,
-        Bf16Aligned,
+        Bf16Aligned
+    };
+
+    enum Processor {
+        Cpu,
         Cuda
     };
 

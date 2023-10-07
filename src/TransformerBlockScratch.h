@@ -15,10 +15,10 @@
 using namespace Common;
 using namespace std;
 
-template<typename T>
+template<typename T, Processor P>
 void allocateScratch(size_t &totalAlloc, void ** p, int alignment, size_t size);
 
-template<typename T>
+template<typename T, Processor P>
 class TransformerBlockScratch {
     int freeIo = 0;
     Scratch<T> ioPtr[2];
@@ -51,7 +51,7 @@ public:
                             int numLayers) {
         size_t totalAlloc = 0;
         using namespace std::placeholders;
-        auto alignedAlloc = bind(allocateScratch<T>, ref(totalAlloc), _1, _2, _3);
+        auto alignedAlloc = bind(allocateScratch<T, P>, ref(totalAlloc), _1, _2, _3);
         ioPtr[0] = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
         ioPtr[1] = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
         inputCopyBuffer = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);

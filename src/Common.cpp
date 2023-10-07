@@ -18,8 +18,6 @@ namespace Common {
                 return 0;
             case Fp32Aligned:
                 return 1;
-            case Cuda:
-                return 2;
         }
     }
 
@@ -29,8 +27,6 @@ namespace Common {
                 return Bf16Aligned;
             case 1:
                 return Fp32Aligned;
-            case 2:
-                return Cuda;
             default:
                 throw 1;
         }
