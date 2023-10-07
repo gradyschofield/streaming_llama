@@ -10,6 +10,7 @@
 #include<cuda.h>
 
 class Cuda {
+    CUdevice device;
 public:
     Cuda();
     void allocateMemory();

@@ -1,3 +1,5 @@
+#ifndef __APPLE__
+
 #include<memory>
 #include<mutex>
 
@@ -13,6 +15,11 @@ mutex m;
 
 Cuda::Cuda() {
     ce(cuInit(0));
+    ce(cuGetDevice(&device, 0));
+    size_t freeMem, totalMem;
+    ce(cuMemGetInfo(&freeMem, & totalMem));
+    cout << "Free GPU memory: " << freeMem << "\n";
+    cout << "Total GPU memory: " << freeMem << "\n";
 }
 
 Cuda * getCuda() {
@@ -30,3 +37,5 @@ void ce(CUresult result) {
         throw Exception(string(str));
     }
 }
+
+#endif

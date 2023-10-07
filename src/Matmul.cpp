@@ -15,22 +15,22 @@ using namespace Common;
 
 #ifdef __APPLE__
 template<>
-void multiplyMatrices<float>(const enum CBLAS_ORDER ORDER,
-                             const enum CBLAS_TRANSPOSE TRANSA,
-                             const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                             const int K, const float ALPHA, const float * A, const int LDA,
-                             const float * B, const int LDB, const float BETA, float * C,
-                             const int LDC) {
+void multiplyMatrices<float, Cpu>(const enum CBLAS_ORDER ORDER,
+                                  const enum CBLAS_TRANSPOSE TRANSA,
+                                  const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                                  const int K, const float ALPHA, const float * A, const int LDA,
+                                  const float * B, const int LDB, const float BETA, float * C,
+                                  const int LDC) {
     cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
 }
 #else
 template<>
-void multiplyMatrices<float>(const enum CBLAS_LAYOUT ORDER,
-                             const enum CBLAS_TRANSPOSE TRANSA,
-                             const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                             const int K, const float ALPHA, const float * A, const int LDA,
-                             const float * B, const int LDB, const float BETA, float * C,
-                             const int LDC) {
+void multiplyMatrices<float, Cpu>(const enum CBLAS_LAYOUT ORDER,
+                                  const enum CBLAS_TRANSPOSE TRANSA,
+                                  const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                                  const int K, const float ALPHA, const float * A, const int LDA,
+                                  const float * B, const int LDB, const float BETA, float * C,
+                                  const int LDC) {
     cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
 }
 #endif
@@ -75,12 +75,12 @@ static void returnScratch(ScratchBuffer s) {
 
 #ifdef __APPLE__
 template<>
-void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
-                            const enum CBLAS_TRANSPOSE TRANSA,
-                            const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                            const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
-                            const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
-                            const int LDC) {
+void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_ORDER ORDER,
+                                 const enum CBLAS_TRANSPOSE TRANSA,
+                                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                                 const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
+                                 const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
+                                 const int LDC) {
     int aNumRows = TRANSA == CblasTrans ? K : M;
     int aNumCols = TRANSA == CblasTrans ? M : K;
     ScratchBuffer aScratch = getScratch(aNumRows, aNumCols);
@@ -113,12 +113,12 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
 }
 #else
 template<>
-void multiplyMatrices<Bf16>(const enum CBLAS_LAYOUT ORDER,
-                 const enum CBLAS_TRANSPOSE TRANSA,
-                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                 const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
-                 const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
-                 const int LDC) {
+void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_LAYOUT ORDER,
+                                 const enum CBLAS_TRANSPOSE TRANSA,
+                                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                                 const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
+                                 const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
+                                 const int LDC) {
     ScratchBuffer cScratch = getScratch(M, N);
     cblas_gemm_bf16bf16f32(ORDER, TRANSA, TRANSB, M, N, K,
                            ALPHA.toFloat(), (uint16_t const *)A, LDA,
@@ -133,3 +133,14 @@ void multiplyMatrices<Bf16>(const enum CBLAS_LAYOUT ORDER,
 }
 #endif
 
+#ifdef __APPLE__
+#else
+template<>
+void multiplyMatrices<Bf16, Cuda>(const enum CBLAS_LAYOUT ORDER,
+                                  const enum CBLAS_TRANSPOSE TRANSA,
+                                  const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                                  const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
+                                  const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
+                                  const int LDC) {
+}
+#endif
