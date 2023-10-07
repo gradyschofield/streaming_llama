@@ -20,6 +20,7 @@ namespace Common {
             case Fp32Aligned:
                 return 1;
         }
+        return 255; // unreachable
     }
 
     FileStorageFormat intToFileStorageFormat(uint8_t i) {

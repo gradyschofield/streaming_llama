@@ -112,6 +112,7 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
     returnScratch(cScratch);
 }
 #else
+template<>
 void multiplyMatrices<Bf16>(const enum CBLAS_LAYOUT ORDER,
                  const enum CBLAS_TRANSPOSE TRANSA,
                  const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,

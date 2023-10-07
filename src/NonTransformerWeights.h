@@ -9,6 +9,8 @@
 #include<sys/mman.h>
 #include<fcntl.h>
 
+#include<memory>
+
 #include<Checker.h>
 #include<Matmul.h>
 #include<Scratch.h>

@@ -5,6 +5,7 @@
 #ifndef STREAMING_LLAMA_LLAMAMODEL_H
 #define STREAMING_LLAMA_LLAMAMODEL_H
 
+#include<memory>
 #include<vector>
 
 #include<Bf16.h>

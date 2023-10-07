@@ -5,6 +5,7 @@
 #ifndef STREAMING_LLAMA_COMMON_H
 #define STREAMING_LLAMA_COMMON_H
 
+#include<cmath>
 #include<cstdint>
 #include<fstream>
 #include<map>
