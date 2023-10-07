@@ -7,12 +7,18 @@
 
 #ifndef __APPLE__
 
+#include<cuda.h>
+
 class Cuda {
 public:
+    Cuda();
     void allocateMemory();
     void launchKernel();
     void streamSynchronize();
 };
+
+Cuda * getCuda();
+void ce(CUresult result);
 
 #endif
 

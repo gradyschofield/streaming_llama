@@ -12,7 +12,7 @@ if(APPLE)
     set(EXTRA_CXX_FLAGS "-DACCELERATE_NEW_LAPACK")
     set(EXTRA_LFLAGS "-framework Accelerate -framework Foundation -framework MetalPerformanceShaders")
 else()
-    set(EXTRA_INCDIRS "${MKLROOT}/include")
+    set(EXTRA_INCDIRS "${MKLROOT}/include" "/usr/local/cuda/include")
     set(EXTRA_CXX_FLAGS "-DMKL_ILP64  -m64  -I${MKLROOT}/include")
     #set(EXTRA_LFLAGS "-L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl") # single thread
     #set(EXTRA_LFLAGS "-L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -ltbb -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl") # "thread building blocks" threading
@@ -68,6 +68,7 @@ set(SRC
         src/Bf16.h
         src/Checker.cpp
         src/Checker.h
+        src/Cuda.cpp
         src/Cuda.h
         src/Exception.h
         src/LlamaModel.h
@@ -92,3 +93,6 @@ target_link_libraries(evaluator ${EXTRA_LFLAGS})
 
 add_executable(testSgemm src/TestSgemm.cpp src/Timer.cpp src/Timer.h)
 target_link_libraries(testSgemm ${EXTRA_LFLAGS})
+
+add_executable(testCuda ${SRC} ${COMMON_SRC} src/TestCuda.cpp)
+target_link_libraries(testCuda ${EXTRA_LFLAGS} cuda)
