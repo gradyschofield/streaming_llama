@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
-project(streaming_llama)
+set(CMAKE_CUDA_COMPILER /usr/local/cuda/bin/nvcc)
+project(streaming_llama LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 23)
 
@@ -7,6 +8,9 @@ if(APPLE)
     set(EXTRA_CXX_FLAGS "-DACCELERATE_NEW_LAPACK")
     set(EXTRA_LFLAGS "-framework Accelerate -framework Foundation -framework MetalPerformanceShaders")
 else()
+    find_package(CUDA REQUIRED)
+    set(CUDA_PTX_COMPILATION ON)
+
     set(EXTRA_INCDIRS "${MKLROOT}/include")
     set(EXTRA_CXX_FLAGS "-DMKL_ILP64  -m64  -I${MKLROOT}/include")
     #set(EXTRA_LFLAGS "-L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl") # single thread
@@ -24,6 +28,30 @@ endif()
 set(CMAKE_LINKER_FLAGS_SANMEM "-pie")
 
 include_directories(src/ ${EXTRA_INCDIRS})
+
+set(CUDA_SRC
+    src/cuda/swilu.cu
+    src/cuda/rope.cu
+    src/cuda/layerNorm.cu
+)
+
+foreach(src ${CUDA_SRC})
+    get_filename_component(filename ${src} NAME_WLE)
+    set(ptx_filename "${CMAKE_BINARY_DIR}/${filename}.ptx")
+    add_custom_command(
+        OUTPUT ${ptx_filename}
+        COMMAND ${CMAKE_CUDA_COMPILER} -ptx -o ${ptx_filename} ${CMAKE_SOURCE_DIR}/${src}
+        DEPENDS ${src}
+    )
+    list(APPEND PTX_FILES ${ptx_filename})
+endforeach()
+
+add_custom_target(cuda_ptx ALL DEPENDS ${PTX_FILES})
+set_target_properties(cuda_ptx PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+)
 
 set(COMMON_SRC
         src/Common.h
