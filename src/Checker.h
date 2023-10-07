@@ -12,6 +12,8 @@
 #include<numeric>
 #include<vector>
 
+#include<Exception.h>
+
 using namespace std;
 
 class CheckerData {
@@ -37,15 +39,27 @@ class Checker {
 
     void check() {
         if(accessors.size() != 2) {
-            throw 1;
+            throw Exception("The checker requires exactly two threads to rendezvous at the barrier.");
         }
         CheckerData const * d1 = accessors[0].get();
         CheckerData const * d2 = accessors[1].get();
         if(d1->getDimensions() != d2->getDimensions()) {
-            throw 1;
+            stringstream sstr;
+            sstr << "The checker received inputs of different dimensions (";
+            for(int d : d1->getDimensions()) {
+                sstr << d << ", ";
+            }
+            sstr.seekp(-2, ios::cur);
+            sstr << ") and (";
+            for(int d : d2->getDimensions()) {
+                sstr << d << ", ";
+            }
+            sstr.seekp(-2, ios::cur);
+            sstr << ")";
+            throw Exception(sstr.str());
         }
         if(d1->getDimensions().size() != 2) {
-            throw 1;
+            throw Exception("The checker received non-two-dimensional input.  You need to add code to handle this.");
         }
         float absMaxValue = 0;
         for(int j = 0; j < d1->getDimensions()[1]; ++j) {
@@ -66,7 +80,12 @@ class Checker {
                     if(largestPositive < absMaxValue * runningTolerance) {
                     } else {
                         if (relErr > runningTolerance) {
-                            throw 1;
+                            stringstream sstr;
+                            sstr << "The checker found a relative error above tolerance when comparing " <<
+                                 p1[i] << " to " << p2[i] << " at position (" << i << ", " << j <<
+                                 ").  The relative error is " << relErr << " and the running tolerance is " <<
+                                 runningTolerance;
+                            throw Exception(sstr.str());
                         }
                     }
                 }

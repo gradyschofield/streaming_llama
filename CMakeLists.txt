@@ -63,20 +63,26 @@ set(COMMON_SRC
         src/Common.cpp
 )
 
-set(SRC src/Socket.h
-        src/Socket.cpp
-        src/Timer.cpp
-        src/Timer.h
+set(SRC
         src/Bf16.cpp
         src/Bf16.h
         src/Checker.cpp
         src/Checker.h
-        src/Scratch.h
-        src/TransformerBlockScratch.cpp
-        src/TransformerBlockScratch.h
-        src/Weights.h
+        src/Cuda.h
+        src/Exception.h
+        src/LlamaModel.h
         src/Matmul.cpp
         src/Matmul.h
+        src/NonTransformerWeights.h
+        src/Scratch.h
+        src/Socket.h
+        src/Socket.cpp
+        src/Timer.cpp
+        src/Timer.h
+        src/TransformerBlockScratch.cpp
+        src/TransformerBlockScratch.h
+        src/TransformerBlock.h
+        src/Weights.h
 )
 
 add_executable(deparallelizer ${COMMON_SRC} src/Deparallelizer.cpp)

@@ -12,6 +12,7 @@
 #include<vector>
 
 #include<Common.h>
+#include<Exception.h>
 
 using namespace std;
 using namespace Common;
@@ -109,8 +110,6 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> con
     int leadingDim = 0;
     if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
         leadingDim = findAlignment(numRows, 64);
-    } else if (fileStorageFormat == Cuda) {
-        leadingDim = numRows;
     } else {
         cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
         exit(1);
@@ -154,8 +153,6 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> con
         int newLeadingDim = 0;
         if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
             newLeadingDim = findAlignment(newNumRows, 64);
-        } else if (fileStorageFormat == Cuda) {
-            newLeadingDim = newNumRows;
         } else {
             cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
             exit(1);
@@ -195,8 +192,6 @@ pair<string, TensorFileInfo> writeNonParallelizedTensor(string const & tensorNam
     int leadingDim = 0;
     if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
         leadingDim = findAlignment(rows, 64);
-    } else if (fileStorageFormat == Cuda) {
-        leadingDim = rows;
     } else {
         cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
         exit(1);
@@ -308,10 +303,10 @@ FileStorageFormat stringToFileStorageFormat(string s) {
         return Bf16Aligned;
     } else if(s == "fp32") {
         return Fp32Aligned;
-    } else if(s == "cuda") {
-        return Cuda;
     } else {
-        throw 1;
+        stringstream sstr;
+        sstr << "The file storage string, " << s << ", was neither bf16 nor fp32.  Do you need to add code to handle this format?";
+        throw Exception(sstr.str());
     }
 }
 

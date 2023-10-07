@@ -2,11 +2,12 @@
 // Created by Grady Schofield on 9/22/23.
 //
 
-#include<Common.h>
-
 #include<algorithm>
 #include<set>
 #include<sstream>
+
+#include<Common.h>
+#include<Exception.h>
 
 //ofstream logger("log");
 using namespace std;
@@ -28,7 +29,9 @@ namespace Common {
             case 1:
                 return Fp32Aligned;
             default:
-                throw 1;
+                stringstream sstr;
+                sstr << "The file format integer, " << (int)i << ", was neither 0 or 1.  Do you need to add code for this format?";
+                throw Exception(sstr.str());
         }
         return Bf16Aligned; // unreachable
     }
