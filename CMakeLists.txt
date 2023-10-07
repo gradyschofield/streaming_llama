@@ -21,7 +21,7 @@ endif()
 
 
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Werror ${EXTRA_CXX_FLAGS}")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${EXTRA_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g ${EXTRA_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS_SANADDR "-fsanitize=address -fno-omit-frame-pointer -O1 -g -Wno-unqualified-std-cast-call ${EXTRA_CXX_FLAGS}")
 if(NOT APPLE)
     set(CMAKE_CXX_FLAGS_SANMEM "-fsanitize=leak -fsanitize-recover=all -fPIE -fno-omit-frame-pointer -O1 -g -Wno-unqualified-std-cast-call ${EXTRA_CXX_FLAGS}")
@@ -95,4 +95,4 @@ add_executable(testSgemm src/TestSgemm.cpp src/Timer.cpp src/Timer.h)
 target_link_libraries(testSgemm ${EXTRA_LFLAGS})
 
 add_executable(testCuda ${SRC} ${COMMON_SRC} src/TestCuda.cpp)
-target_link_libraries(testCuda ${EXTRA_LFLAGS} cuda)
+target_link_libraries(testCuda  ${EXTRA_LFLAGS} cuda)

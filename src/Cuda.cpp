@@ -1,5 +1,6 @@
 #ifndef __APPLE__
 
+#include<iostream>
 #include<memory>
 #include<mutex>
 
@@ -15,11 +16,20 @@ mutex m;
 
 Cuda::Cuda() {
     ce(cuInit(0));
-    ce(cuGetDevice(&device, 0));
+    ce(cuDeviceGet(&device, 0));
+    ce(cuCtxCreate(&context, 0, device));
     size_t freeMem, totalMem;
     ce(cuMemGetInfo(&freeMem, & totalMem));
     cout << "Free GPU memory: " << freeMem << "\n";
-    cout << "Total GPU memory: " << freeMem << "\n";
+    cout << "Total GPU memory: " << freeMem <<endl;
+}
+
+Cuda::~Cuda() {
+    try {
+        cuCtxDestroy(context);
+    } catch(Exception & e) {
+        cout << e.what() << endl;
+    }
 }
 
 Cuda * getCuda() {

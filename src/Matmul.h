@@ -11,6 +11,10 @@
 #include<mkl.h>
 #endif
 
+#include<Common.h>
+
+using namespace Common;
+
 #ifdef __APPLE__
 template<typename T, Processor P>
 void multiplyMatrices(const enum CBLAS_ORDER ORDER,

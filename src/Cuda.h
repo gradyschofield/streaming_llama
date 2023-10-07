@@ -11,8 +11,10 @@
 
 class Cuda {
     CUdevice device;
+    CUcontext context;
 public:
     Cuda();
+    ~Cuda();
     void allocateMemory();
     void launchKernel();
     void streamSynchronize();
