@@ -96,3 +96,5 @@ target_link_libraries(testSgemm ${EXTRA_LFLAGS})
 
 add_executable(testCuda ${SRC} ${COMMON_SRC} src/TestCuda.cpp)
 target_link_libraries(testCuda  ${EXTRA_LFLAGS} cuda)
+
+add_executable(pointerArithmetic src/PointerArithmetic.cpp)

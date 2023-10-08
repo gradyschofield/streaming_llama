@@ -12,6 +12,12 @@
 class Cuda {
     CUdevice device;
     CUcontext context;
+    cublasHandle_t cublasHandle;
+    map<string, CUmodule> modules;
+    map<string, CUfunction> functions;
+
+    void loadModule(string moduleName);
+    void getFunction(string moduleName, string functionName);
 public:
     Cuda();
     ~Cuda();
