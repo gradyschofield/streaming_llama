@@ -135,21 +135,17 @@ void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_LAYOUT ORDER,
 
 #ifdef __APPLE__
 #else
+
+#include<Cuda.h>
+
 template<>
-void multiplyMatrices<Bf16, Cuda>(const enum CBLAS_LAYOUT ORDER,
+void multiplyMatrices<Bf16, Gpu>(const enum CBLAS_LAYOUT ORDER,
                                   const enum CBLAS_TRANSPOSE TRANSA,
                                   const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
                                   const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
                                   const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
                                   const int LDC) {
-    cuEventRecord(ev1, 0);
-    cublasGemmEx(cublasHandle, TRANSA, TRANSB, M, N, K,
-                 &ALPHA, A, CUDA_R_16BF, LDA,
-                 B, CUDA_R_16BF, LDB, &BETA, C, CUDA_R_16BF, LDC,
-                 CUDA_R_32F, CUBLAS_GEMM_DEFAULT);
-    cuEventRecord(ev2, 0);
-    cuEventSynchronize(ev2);
-    float millis;
-    cuEventElapsedTime(&millis, ev1, ev2);
+    Cuda * cuda = getCuda();
+    cuda->matmul(TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
 }
 #endif

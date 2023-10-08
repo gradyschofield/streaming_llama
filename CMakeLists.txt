@@ -16,7 +16,7 @@ else()
     set(EXTRA_CXX_FLAGS "-DMKL_ILP64  -m64  -I${MKLROOT}/include")
     #set(EXTRA_LFLAGS "-L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl") # single thread
     #set(EXTRA_LFLAGS "-L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -ltbb -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl") # "thread building blocks" threading
-    set(EXTRA_LFLAGS "stdc++_libbacktrace -L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl") # intel openmp  threading
+    set(EXTRA_LFLAGS "stdc++_libbacktrace -L/usr/local/cuda/lib64 -L${MKLROOT}/lib/ -Wl,--no-as-needed -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl") # intel openmp  threading
 endif()
 
 
@@ -95,6 +95,4 @@ add_executable(testSgemm src/TestSgemm.cpp src/Timer.cpp src/Timer.h)
 target_link_libraries(testSgemm ${EXTRA_LFLAGS})
 
 add_executable(testCuda ${SRC} ${COMMON_SRC} src/TestCuda.cpp)
-target_link_libraries(testCuda  ${EXTRA_LFLAGS} cuda)
-
-add_executable(pointerArithmetic src/PointerArithmetic.cpp)
+target_link_libraries(testCuda  ${EXTRA_LFLAGS} cuda cublas)

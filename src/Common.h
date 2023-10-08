@@ -25,7 +25,7 @@ namespace Common {
 
     enum Processor {
         Cpu,
-        Cuda
+        Gpu 
     };
 
     uint8_t fileStorageFormatToInt(FileStorageFormat fileStorageFormat);
