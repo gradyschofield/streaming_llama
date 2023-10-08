@@ -18,7 +18,7 @@
 
 using namespace std;
 
-template<typename T>
+template<typename T, Processor P>
 class NonTransformerWeights {
     Weights<T> tokenEmbeddings;
     Weights<T> ropeFreqs;
@@ -107,16 +107,16 @@ public:
                                                      in.getLeadingDimension()));
         }
 
-        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                            outputWeights.getNumRows(), seqlen, outputWeights.getNumColumns(),
-                            1.0,
-                            outputWeights.getPtr(mapAddress),
-                            outputWeights.getLeadingDimension(),
-                            in.getPtr(),
-                            in.getLeadingDimension(),
-                            0.0,
-                            out.getPtr(),
-                            out.getLeadingDimension());
+        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                               outputWeights.getNumRows(), seqlen, outputWeights.getNumColumns(),
+                               1.0,
+                               outputWeights.getPtr(mapAddress),
+                               outputWeights.getLeadingDimension(),
+                               in.getPtr(),
+                               in.getLeadingDimension(),
+                               0.0,
+                               out.getPtr(),
+                               out.getLeadingDimension());
         if(checker) {
             checker->submitResult(createDataAccessor(out.getPtr(),
                                                      {outputWeights.getNumRows(),

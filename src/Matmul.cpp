@@ -100,8 +100,9 @@ void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_ORDER ORDER,
         }
     }
     cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K,
-                ALPHA.toFloat(), aBuffer, aNumRows, bBuffer, K,
-                BETA.toFloat(), cBuffer, M);
+                ALPHA.toFloat(), aBuffer, aScratch.leadingDimension,
+                bBuffer, bScratch.leadingDimension,
+                BETA.toFloat(), cBuffer, cScratch.leadingDimension);
     for(int j = 0; j < N; ++j) {
         for (int i = 0; i < M; ++i) {
             C[i + LDC*j] = cBuffer[i + cScratch.leadingDimension*j];

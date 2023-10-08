@@ -24,7 +24,7 @@ public:
 
 template<typename T, Processor P>
 class LlamaModel : public LLamaModelInterface {
-    shared_ptr<NonTransformerWeights<T>> nonTransformerWeights;
+    shared_ptr<NonTransformerWeights<T, P>> nonTransformerWeights;
     vector<shared_ptr<TransformerBlock<T, P>>> transformerBlocks;
     int tensorFile;
     shared_ptr<TransformerBlockScratch<T, P>> transformerBlockScratch;
@@ -99,7 +99,7 @@ public:
                         tensorFileInfo.at("tok_embeddings.weight").numColumns,
                         layerCount);
         tensorFile = open(tensorFilename.c_str(), O_RDONLY);
-        nonTransformerWeights = make_shared<NonTransformerWeights<T>>(tensorFileInfo, tensorFile, checker);
+        nonTransformerWeights = make_shared<NonTransformerWeights<T, P>>(tensorFileInfo, tensorFile, checker);
         for(int i = 0; i < layerCount; ++i) {
             transformerBlocks.push_back(make_shared<TransformerBlock<T, P>>(i,
                     tensorFileInfo,

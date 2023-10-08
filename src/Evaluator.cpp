@@ -20,9 +20,6 @@
 using namespace std;
 using namespace Common;
 
-static ostream & logger = cout;
-
-
 #define MANUAL_TESTING 0
 
 int main(int argc, char ** argv) {
@@ -59,12 +56,12 @@ int main(int argc, char ** argv) {
             numTokens = socket.getInt();
             tokens = socket.getIntArray(numTokens);
         } catch(exception & e) {
-            logger << "Client disconnected" << endl;
+            cout << "Client disconnected" << endl;
             break;
         }
         Timer timer;
         vector<float> logits = model->evaluate(tokens);
-        logger << timer.elapsed()/tokens.size() << " sec per token.  sending back " << logits.size() << " logits" << endl;
+        cout << timer.elapsed()/tokens.size() << " sec per token.  sending back " << logits.size() << " logits" << endl;
         timer.start();
         socket.sendFloatArray(logits);
         socket.sendInt(-1);

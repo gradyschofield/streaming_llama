@@ -112,42 +112,42 @@ public:
         //M = queryWeights.numRows, K = queryWeights.numCols or embeddingDimension, N = seqlen
         T* wqOutPtr = transformerBlockScratch->getWQout().getPtr();
         int wqOutLeadingDim = transformerBlockScratch->getWQout().getLeadingDimension();
-        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                            queryWeights.getNumRows(), seqlen, queryWeights.getNumColumns(),
-                            1.0,
-                            queryWeights.getPtr(mapAddress),
-                            queryWeights.getLeadingDimension(),
-                            inputCopy.getPtr(),
-                            inputCopy.getLeadingDimension(),
-                            0.0,
-                            wqOutPtr,
-                            wqOutLeadingDim);
+        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                               queryWeights.getNumRows(), seqlen, queryWeights.getNumColumns(),
+                               1.0,
+                               queryWeights.getPtr(mapAddress),
+                               queryWeights.getLeadingDimension(),
+                               inputCopy.getPtr(),
+                               inputCopy.getLeadingDimension(),
+                               0.0,
+                               wqOutPtr,
+                               wqOutLeadingDim);
 
         T* wkOutPtr = transformerBlockScratch->getWKout(layerIdx).getPtr();
         int wkOutLeadingDim = transformerBlockScratch->getWKout(layerIdx).getLeadingDimension();
-        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                            keyWeights.getNumRows(), seqlen, keyWeights.getNumColumns(),
-                            1.0,
-                            keyWeights.getPtr(mapAddress),
-                            keyWeights.getLeadingDimension(),
-                            inputCopy.getPtr(),
-                            inputCopy.getLeadingDimension(),
-                            0.0,
-                            &wkOutPtr[currentToken * wkOutLeadingDim],
-                            wkOutLeadingDim);
+        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                               keyWeights.getNumRows(), seqlen, keyWeights.getNumColumns(),
+                               1.0,
+                               keyWeights.getPtr(mapAddress),
+                               keyWeights.getLeadingDimension(),
+                               inputCopy.getPtr(),
+                               inputCopy.getLeadingDimension(),
+                               0.0,
+                               &wkOutPtr[currentToken * wkOutLeadingDim],
+                               wkOutLeadingDim);
 
         T * wvOutPtr = transformerBlockScratch->getWVout(layerIdx).getPtr();
         int wvOutLeadingDim = transformerBlockScratch->getWVout(layerIdx).getLeadingDimension();
-        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                            valueWeights.getNumRows(), seqlen, valueWeights.getNumColumns(),
-                            1.0,
-                            valueWeights.getPtr(mapAddress),
-                            valueWeights.getLeadingDimension(),
-                            inputCopy.getPtr(),
-                            inputCopy.getLeadingDimension(),
-                            0.0,
-                            &wvOutPtr[currentToken * wvOutLeadingDim],
-                            wvOutLeadingDim);
+        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                               valueWeights.getNumRows(), seqlen, valueWeights.getNumColumns(),
+                               1.0,
+                               valueWeights.getPtr(mapAddress),
+                               valueWeights.getLeadingDimension(),
+                               inputCopy.getPtr(),
+                               inputCopy.getLeadingDimension(),
+                               0.0,
+                               &wvOutPtr[currentToken * wvOutLeadingDim],
+                               wvOutLeadingDim);
 
         if(checker) {
             checker->submitResult(createDataAccessor(wqOutPtr,
@@ -216,16 +216,22 @@ public:
             int K = headDimension;
             int inputHeadOffset = head * headDimension;
             int outputHeadOffset = head * (currentToken + seqlen);
-            multiplyMatrices<T>(CblasColMajor, CblasTrans, CblasNoTrans,
-                                M, N, K,
-                                1.0,
-                                &wkOutPtr[inputHeadOffset],
-                                keyWeights.getLeadingDimension(),
-                                &wqOutPtr[inputHeadOffset],
-                                queryWeights.getLeadingDimension(),
-                                0.0,
-                                &qkOutPtr[outputHeadOffset],
-                                qkOutLeadingDim);
+            multiplyMatrices<T, P>(CblasColMajor, CblasTrans, CblasNoTrans,
+                                   M, N, K,
+                                   1.0,
+                                   &wkOutPtr[inputHeadOffset],
+                                   keyWeights.getLeadingDimension(),
+                                   &wqOutPtr[inputHeadOffset],
+                                   queryWeights.getLeadingDimension(),
+                                   0.0,
+                                   &qkOutPtr[outputHeadOffset],
+                                   qkOutLeadingDim);
+            if(checker) {
+                checker->submitResult(createDataAccessor(&qkOutPtr[outputHeadOffset],
+                                                         {(currentToken + seqlen),
+                                                          seqlen},
+                                                         qkOutLeadingDim));
+            }
             //Compute the softmax with masking
             for (int j = 0; j < seqlen; ++j) {
                 for (int i = currentToken + j + 1; i < currentToken + seqlen; ++i) {
@@ -251,6 +257,12 @@ public:
                 }
             }
         }
+        if(checker) {
+            checker->submitResult(createDataAccessor(qkOutPtr,
+                                                     {numHeads * (currentToken + seqlen),
+                                                      seqlen},
+                                                     qkOutLeadingDim));
+        }
 
         Scratch<T> vqkOut = transformerBlockScratch->getVQKout();
         T * vqkOutPtr = vqkOut.getPtr();
@@ -262,30 +274,30 @@ public:
             int M = headDimension;
             int N = seqlen;
             int K = currentToken + seqlen;
-            multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                                M, N, K,
-                                1.0,
-                                &wvOutPtr[headOffset],
-                                wvOutLeadingDim,
-                                &qkOutPtr[qkHeadOffset],
-                                qkOutLeadingDim,
-                                0.0,
-                                &vqkOutPtr[headOffset],
-                                vqkOutLeadingDim);
+            multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                                   M, N, K,
+                                   1.0,
+                                   &wvOutPtr[headOffset],
+                                   wvOutLeadingDim,
+                                   &qkOutPtr[qkHeadOffset],
+                                   qkOutLeadingDim,
+                                   0.0,
+                                   &vqkOutPtr[headOffset],
+                                   vqkOutLeadingDim);
         }
 
         T* woOutPtr = transformerBlockScratch->getWOout().getPtr();
         int woOutLeadingDim = transformerBlockScratch->getWOout().getLeadingDimension();
-        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                            outputWeights.getNumRows(), seqlen, outputWeights.getNumColumns(),
-                            1.0,
-                            outputWeights.getPtr(mapAddress),
-                            outputWeights.getLeadingDimension(),
-                            vqkOutPtr,
-                            vqkOutLeadingDim,
-                            0.0,
-                            woOutPtr,
-                            woOutLeadingDim);
+        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                               outputWeights.getNumRows(), seqlen, outputWeights.getNumColumns(),
+                               1.0,
+                               outputWeights.getPtr(mapAddress),
+                               outputWeights.getLeadingDimension(),
+                               vqkOutPtr,
+                               vqkOutLeadingDim,
+                               0.0,
+                               woOutPtr,
+                               woOutLeadingDim);
 
         // Handle first residual connection
         Scratch<T> woOutCopy = transformerBlockScratch->getWOoutCopy();
@@ -307,28 +319,28 @@ public:
                               normEps);
 
         Scratch<T> w1Out = transformerBlockScratch->getW1Out();
-        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                            ffnWeights1.getNumRows(), seqlen, ffnWeights1.getNumColumns(),
-                            1.0,
-                            ffnWeights1.getPtr(mapAddress),
-                            ffnWeights1.getLeadingDimension(),
-                            woOutPtr,
-                            woOutLeadingDim,
-                            0.0,
-                            w1Out.getPtr(),
-                            w1Out.getLeadingDimension());
+        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                               ffnWeights1.getNumRows(), seqlen, ffnWeights1.getNumColumns(),
+                               1.0,
+                               ffnWeights1.getPtr(mapAddress),
+                               ffnWeights1.getLeadingDimension(),
+                               woOutPtr,
+                               woOutLeadingDim,
+                               0.0,
+                               w1Out.getPtr(),
+                               w1Out.getLeadingDimension());
 
         Scratch<T> w3Out = transformerBlockScratch->getW3Out();
-        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                            ffnWeights3.getNumRows(), seqlen, ffnWeights3.getNumColumns(),
-                            1.0,
-                            ffnWeights3.getPtr(mapAddress),
-                            ffnWeights3.getLeadingDimension(),
-                            woOutPtr,
-                            woOutLeadingDim,
-                            0.0,
-                            w3Out.getPtr(),
-                            w3Out.getLeadingDimension());
+        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                               ffnWeights3.getNumRows(), seqlen, ffnWeights3.getNumColumns(),
+                               1.0,
+                               ffnWeights3.getPtr(mapAddress),
+                               ffnWeights3.getLeadingDimension(),
+                               woOutPtr,
+                               woOutLeadingDim,
+                               0.0,
+                               w3Out.getPtr(),
+                               w3Out.getLeadingDimension());
 
         for(int j = 0; j < seqlen; ++j) {
             T * ptr1 = &w1Out.getPtr()[j * w1Out.getLeadingDimension()];
@@ -339,16 +351,16 @@ public:
         }
 
         Scratch<T>  w2Out = transformerBlockScratch->getW2Out();
-        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                            ffnWeights2.getNumRows(), seqlen, ffnWeights2.getNumColumns(),
-                            1.0,
-                            ffnWeights2.getPtr(mapAddress),
-                            ffnWeights2.getLeadingDimension(),
-                            w1Out.getPtr(),
-                            w1Out.getLeadingDimension(),
-                            0.0,
-                            w2Out.getPtr(),
-                            w2Out.getLeadingDimension());
+        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                               ffnWeights2.getNumRows(), seqlen, ffnWeights2.getNumColumns(),
+                               1.0,
+                               ffnWeights2.getPtr(mapAddress),
+                               ffnWeights2.getLeadingDimension(),
+                               w1Out.getPtr(),
+                               w1Out.getLeadingDimension(),
+                               0.0,
+                               w2Out.getPtr(),
+                               w2Out.getLeadingDimension());
 
         Scratch<T> out = transformerBlockScratch->takeFreeIoPtr();
         int outLeadingDim = out.getLeadingDimension();
