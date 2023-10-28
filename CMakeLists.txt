@@ -72,6 +72,7 @@ set(SRC
         src/Cuda.h
         src/Exception.h
         src/LlamaModel.h
+        src/LayerNormalization.h
         src/Matmul.cpp
         src/Matmul.h
         src/NonTransformerWeights.h

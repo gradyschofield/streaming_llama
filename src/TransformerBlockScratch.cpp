@@ -17,18 +17,20 @@ void allocateScratch<Bf16, Cpu>(size_t &totalAlloc, void ** p, int alignment, si
     posix_memalign(p, alignment, size);
 }
 
-#ifdef BUILD_CUDA
+#ifndef __APPLE__
 template<>
-void allocateScratch<float, Cuda>(size_t &totalAlloc, void ** p, int alignment, size_t size) {
+void allocateScratch<float, Gpu>(size_t &totalAlloc, void ** p, int alignment, size_t size) {
     totalAlloc += size;
     Cudeviceptr **ptr = (Cudeviceptr**)p;
     *ptr = new Cudeviceptr;
-    ce(cuMemAlloc(*p, ));
+    ce(cuMemAlloc(*p, size));
 }
 
 template<>
-void allocateScratch<Bf16, Cuda>(size_t &totalAlloc, void ** p, int alignment, size_t size) {
+void allocateScratch<Bf16, Gpu>(size_t &totalAlloc, void ** p, int alignment, size_t size) {
     totalAlloc += size;
-    ce(cuMemAlloc(*(Cudeviceptr**)p, ));
+    Cudeviceptr **ptr = (Cudeviceptr**)p;
+    *ptr = new Cudeviceptr;
+    ce(cuMemAlloc(*p, size));
 }
 #endif

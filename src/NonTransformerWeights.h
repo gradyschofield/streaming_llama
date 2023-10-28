@@ -12,6 +12,7 @@
 #include<memory>
 
 #include<Checker.h>
+#include<LayerNormalization.h>
 #include<Matmul.h>
 #include<Scratch.h>
 #include<Weights.h>
@@ -52,6 +53,11 @@ public:
         ropeFreqs = Weights<T>(mapOffset, tensorInfoMap.at("rope.freqs"));
         outputNormalizers = Weights<T>(mapOffset, tensorInfoMap.at("norm.weight"));
         outputWeights = Weights<T>(mapOffset, tensorInfoMap.at("output.weight"));
+        if (P == Gpu) {
+            /*
+             * Allocate GPU memory, copy to GPU, unmap file
+             */
+        }
     }
 
     ~NonTransformerWeights() {
@@ -94,12 +100,12 @@ public:
     }
 
     void applyOutputLayer(Scratch<T> in, Scratch<T> out, int seqlen, float normEps) {
-        layerNormalization<T>(outputNormalizers.getPtr(mapAddress),
-                              in.getPtr(),
-                              outputWeights.getNumColumns(),
-                              in.getLeadingDimension(),
-                              seqlen,
-                              normEps);
+        LayerNormalization<T, P>::exec(outputNormalizers.getPtr(mapAddress),
+                                       in.getPtr(),
+                                       outputWeights.getNumColumns(),
+                                       in.getLeadingDimension(),
+                                       seqlen,
+                                       normEps);
         if(checker) {
             checker->submitResult(createDataAccessor(in.getPtr(),
                                                      {outputWeights.getNumColumns(),

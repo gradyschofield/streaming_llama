@@ -12,9 +12,9 @@
 #include<string>
 #include<vector>
 
-using namespace std;
+#include<Exception.h>
 
-//extern ofstream logger;
+using namespace std;
 
 namespace Common {
 
@@ -42,21 +42,6 @@ namespace Common {
     int getLayerCount(map<string, TensorFileInfo> const & tensorFileInfo);
 
     int findAlignment(int elements, int alignmentBytes);
-
-    template<typename T>
-    void layerNormalization(T * weights, T* src, int numRows, int leadingDimension, int seqlen, T normEps) {
-        for(int j = 0; j < seqlen; ++j) {
-            float accum = 0;
-            T* ptr = &src[j * leadingDimension];
-            for(int i = 0; i < numRows; ++i) {
-                accum += (float)ptr[i] * (float)ptr[i];
-            }
-            float norm = 1.0 / sqrt(accum/numRows + normEps);
-            for(int i = 0; i < numRows; ++i) {
-                ptr[i] *= (float)weights[i] * norm;
-            }
-        }
-    }
 
 }
 

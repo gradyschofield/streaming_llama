@@ -11,6 +11,7 @@
 
 #include<Checker.h>
 #include<Common.h>
+#include<LayerNormalization.h>
 #include<Matmul.h>
 #include<Scratch.h>
 #include<TransformerBlockScratch.h>
@@ -97,12 +98,12 @@ public:
         memcpy(inputCopy.getPtr(), inPtr, seqlen * in.getLeadingDimension() * sizeof(T));
 
         //Layer normalization
-        layerNormalization<T>(attentionNormWeights.getPtr(mapAddress),
-                              inputCopy.getPtr(),
-                              queryWeights.getNumColumns(),
-                              inputCopy.getLeadingDimension(),
-                              seqlen,
-                              normEps);
+        LayerNormalization<T, P>::exec(attentionNormWeights.getPtr(mapAddress),
+                                       inputCopy.getPtr(),
+                                       queryWeights.getNumColumns(),
+                                       inputCopy.getLeadingDimension(),
+                                       seqlen,
+                                       normEps);
         if(checker) {
             checker->submitResult(createDataAccessor(inputCopy.getPtr(),
                                                      {queryWeights.getNumColumns(),
@@ -311,12 +312,12 @@ public:
         }
 
         //FFN layer normalizatoin
-        layerNormalization<T>(ffnNormWeights.getPtr(mapAddress),
-                              woOutPtr,
-                              outputWeights.getNumRows(),
-                              woOutLeadingDim,
-                              seqlen,
-                              normEps);
+        LayerNormalization<T, P>::exec(ffnNormWeights.getPtr(mapAddress),
+                                       woOutPtr,
+                                       outputWeights.getNumRows(),
+                                       woOutLeadingDim,
+                                       seqlen,
+                                       normEps);
 
         Scratch<T> w1Out = transformerBlockScratch->getW1Out();
         multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,

@@ -15,6 +15,7 @@ class Weights {
     int numRows;
     int numColumns;
     int leadingDimension;
+    uint64_t gpuPointer = 0;
 
 public:
     Weights() {
@@ -29,6 +30,9 @@ public:
     }
 
     T * getPtr(void* base) const {
+        if (gpuPointer) {
+            return (T*)gpuPointer;
+        }
         return (T*)((uint8_t*)base + offsetIntoBlock);
     }
 

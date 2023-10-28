@@ -30,7 +30,8 @@ Cuda::Cuda() {
     loadModule("layerNorm.ptx");
     getFunction("swilu.ptx", "swilu");
     getFunction("rope.ptx", "rope");
-    getFunction("layerNorm.ptx", "layerNorm");
+    getFunction("layerNorm.ptx", "layerNormFp32");
+    getFunction("layerNorm.ptx", "layerNormBf16");
 
     size_t freeMem, totalMem;
     ce(cuMemGetInfo(&freeMem, & totalMem));
