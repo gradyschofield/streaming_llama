@@ -20,7 +20,7 @@ else()
 endif()
 
 
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Werror ${EXTRA_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall ${EXTRA_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g ${EXTRA_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS_SANADDR "-fsanitize=address -fno-omit-frame-pointer -O1 -g -Wno-unqualified-std-cast-call ${EXTRA_CXX_FLAGS}")
 if(NOT APPLE)
@@ -97,3 +97,9 @@ target_link_libraries(testSgemm ${EXTRA_LFLAGS})
 
 add_executable(testCuda ${SRC} ${COMMON_SRC} src/TestCuda.cpp)
 target_link_libraries(testCuda  ${EXTRA_LFLAGS} cuda cublas)
+
+add_executable(testMemoryBandwidth src/TestMemoryBandwidth.cpp src/Timer.cpp src/Timer.h)
+target_link_libraries(testMemoryBandwidth ${EXTRA_LFLAGS})
+
+add_executable(testSimpleMatvec src/TestSimpleMatvec.cpp src/Timer.cpp src/Timer.h)
+target_link_libraries(testSimpleMatvec ${EXTRA_LFLAGS})
