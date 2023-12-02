@@ -70,6 +70,7 @@ set(SRC
         src/Checker.h
         src/Cuda.cpp
         src/Cuda.h
+        src/EvaluationTimings.h
         src/Exception.h
         src/LlamaModel.h
         src/LayerNormalization.h

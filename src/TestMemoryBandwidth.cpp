@@ -16,6 +16,7 @@ int main(int argc, char ** argv) {
     vector<long*> p(numThreads);
     for(int i = 0; i < numThreads; ++i) {
         posix_memalign((void**)&p[i], 64, size);
+        memset(p[i], 0, size);
     }
     auto worker = [len](long * p) {
         long tmp = 0;

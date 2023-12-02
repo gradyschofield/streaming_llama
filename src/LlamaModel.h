@@ -10,6 +10,7 @@
 
 #include<Bf16.h>
 #include<Common.h>
+#include<EvaluationTimings.h>
 #include<NonTransformerWeights.h>
 #include<TransformerBlock.h>
 
@@ -33,6 +34,7 @@ class LlamaModel : public LLamaModelInterface {
     T normEps;
     FileStorageFormat fileStorageFormat;
     shared_ptr<Checker> checker;
+    EvaluationTimings timings;
 
     map<string, TensorFileInfo> readTensorFileInfoTable(ifstream & ifs) {
         int64_t tensorOffsetTablePos = 0;
@@ -118,7 +120,9 @@ public:
     vector<float> evaluate(vector<int> const & tokens) override {
         int seqlen = tokens.size();
         Scratch<T> out = transformerBlockScratch->takeFreeIoPtr();
+        timings.start("Get token embeddings");
         nonTransformerWeights->getTokenEmbedding(tokens, out.getPtr());
+        timings.finish("Get token embeddings");
         if(checker) {
             checker->submitResult(createDataAccessor(out.getPtr(),
                                                      {nonTransformerWeights->getTokenEmbeddings().getNumRows(),
@@ -129,11 +133,13 @@ public:
             transformerBlock->mmap();
             out = transformerBlock->evaluate(out,
                                              seqlen,
-                                             transformerBlockScratch);
+                                             transformerBlockScratch,
+                                             timings);
             transformerBlock->munmap();
         }
         vector<float> ret(nonTransformerWeights->getVocabularySize());
         Scratch<T> in = transformerBlockScratch->takeFreeIoPtr();
+        timings.start("Compute output layer");
         memcpy(in.getPtr(),
                &out.getPtr()[out.getLeadingDimension() * (seqlen-1)],
                sizeof(T) * out.getLeadingDimension());
@@ -141,6 +147,8 @@ public:
                                                 transformerBlockScratch->getOut(),
                                                 1,
                                                 normEps);
+        timings.finish("Compute output layer");
+        timings.print(cout);
         if(checker) {
             checker->finish();
         }

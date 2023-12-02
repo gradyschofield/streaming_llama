@@ -17,3 +17,12 @@ double Timer::elapsed() const {
     auto endTime = chrono::system_clock::now();
     return chrono::duration_cast<chrono::nanoseconds>(endTime - startTime).count() / 1E9;
 }
+
+double Timer::elapsedSeconds() const {
+    return elapsed();
+}
+
+long Timer::elapsedNanos() const {
+    auto endTime = chrono::system_clock::now();
+    return chrono::duration_cast<chrono::nanoseconds>(endTime - startTime).count();
+}

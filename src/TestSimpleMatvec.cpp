@@ -88,11 +88,53 @@ int main(int argc, char ** argv) {
     for (int i = 0; i < numThreads; ++i) {
         threads[i].join();
     }
-    cout << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
+    threads.clear();
+    cout << "custom: " << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
+    timer.start();
+    for (int i = 0; i < numThreads; ++i) {
+        threads.emplace_back(worker, i);
+    }
+    for (int i = 0; i < numThreads; ++i) {
+        threads[i].join();
+    }
+    threads.clear();
+    cout << "custom: " << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
     timer.start();
     for (int i = 0; i < numMatrices; ++i) {
         cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, M, 1, K, 1.0, A[i], M, x[i], K, 0.0, y[i], M);
     }
-    cout << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
+    cout << "cblas: " << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
+    timer.start();
+    for (int i = 0; i < numThreads; ++i) {
+        threads.emplace_back(worker, i);
+    }
+    for (int i = 0; i < numThreads; ++i) {
+        threads[i].join();
+    }
+    threads.clear();
+    cout << "custom: " << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
+    timer.start();
+    for (int i = 0; i < numThreads; ++i) {
+        threads.emplace_back(worker, i);
+    }
+    for (int i = 0; i < numThreads; ++i) {
+        threads[i].join();
+    }
+    threads.clear();
+    cout << "custom: " << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
+    timer.start();
+    for (int i = 0; i < numThreads; ++i) {
+        threads.emplace_back(worker, i);
+    }
+    for (int i = 0; i < numThreads; ++i) {
+        threads[i].join();
+    }
+    threads.clear();
+    cout << "custom: " << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
+    timer.start();
+    for (int i = 0; i < numMatrices; ++i) {
+        cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, M, 1, K, 1.0, A[i], M, x[i], K, 0.0, y[i], M);
+    }
+    cout << "cblas: " << numMatrices * matrixSize / timer.elapsed() / 1E9 << " GB/s\n";
     return 0;
 }

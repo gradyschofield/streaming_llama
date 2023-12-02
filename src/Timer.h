@@ -15,6 +15,8 @@ public:
     Timer();
     void start();
     double elapsed() const;
+    double elapsedSeconds() const;
+    long elapsedNanos() const;
 };
 
 
