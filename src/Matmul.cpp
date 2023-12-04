@@ -90,6 +90,7 @@ struct WorkParams {
     Bf16 const * B;
     int startCol;
     int endCol;
+    bool finished = true;
 };
 
 struct Matvec {
@@ -130,7 +131,7 @@ public:
         atomic_store_explicit(&barrierCompletionIndicator, 1, memory_order_relaxed);
         {
             lock_guard<mutex> lk(mainWaitConditionVarMutex);
-            params.clear();
+            for (WorkParams & wp : params) wp.finished = true;
         }
         //signal main thread for completion
         mainWaitConditionVar.notify_all();
@@ -141,6 +142,7 @@ public:
               ci(numThreads),
               numThreads(numThreads),
               bar(numThreads, bind(&Matvec::accumulate, this)),
+              params(numThreads),
               workerWaitConditionVarMutex(numThreads),
               workerWaitConditionVar(numThreads)
     {
@@ -151,7 +153,7 @@ public:
                     another matmul before the worker got to this point.  So test to see if params is nonempty.
                  */
                 unique_lock<mutex> lk(workerWaitConditionVarMutex[threadIdx]);
-                if (params.empty()) {
+                if (params[threadIdx].finished) {
                     // wait for condition
                     workerWaitConditionVar[threadIdx].wait(lk);
                     //hande spurious wake up
@@ -207,16 +209,14 @@ public:
 
         {
             int startCol = 0;
-            for (int i = 0; i < numThreads; ++i) workerWaitConditionVarMutex[i].lock();
-            params.resize(numThreads);
             for (int i = 0; i < numThreads; ++i) {
-                int cols = (K / numThreads) + (i < K % numThreads ? 1 : 0);
-                int endCol = startCol + cols;
-                params[i] = WorkParams{M, N, K, TRANSA, A, LDA, B, startCol, endCol};
-                startCol = endCol;
-            }
-            for (int i = 0; i < numThreads; ++i) workerWaitConditionVarMutex[i].unlock();
-            for (int i = 0; i < numThreads; ++i) {
+                {
+                    lock_guard lg(workerWaitConditionVarMutex[i]);
+                    int cols = (K / numThreads) + (i < K % numThreads ? 1 : 0);
+                    int endCol = startCol + cols;
+                    params[i] = WorkParams{M, N, K, TRANSA, A, LDA, B, startCol, endCol, false};
+                    startCol = endCol;
+                }
                 workerWaitConditionVar[i].notify_all();
             }
             /*
@@ -229,7 +229,7 @@ public:
         //signal all threads
         //wait for all threads
         unique_lock<mutex> lk(mainWaitConditionVarMutex);
-        if (!params.empty()) {
+        if (!params[0].finished) {
             mainWaitConditionVar.wait(lk);
         }
         atomic_load_explicit(&barrierCompletionIndicator, memory_order_relaxed);
@@ -279,7 +279,7 @@ void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_ORDER ORDER,
         returnScratch(cScratch);
     } else {
         static Matvec * matvec = nullptr;
-        int numThreads = 4;
+        int numThreads = 16;
         if (!matvec) {
             matvec = new Matvec(numThreads);
         }
