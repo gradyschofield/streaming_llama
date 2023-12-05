@@ -39,7 +39,7 @@ namespace Common {
 
     vector<pair<string, TensorFileInfo>> getTensorsForLayer(int layer, map<string, TensorFileInfo> const & tensorFileInfo) {
         stringstream sstr;
-        sstr << "layers." << layer;
+        sstr << "layers." << layer << ".";
         string prefix = sstr.str();
         vector<pair<string, TensorFileInfo>> ret;
         for(auto & p : tensorFileInfo) {

@@ -10,8 +10,8 @@
 using namespace std;
 
 int main(int argc, char ** argv) {
-    int numThreads = 16;
-    long size = 14E9 / numThreads;
+    int numThreads = 8;
+    long size = 10E9 / numThreads;
     typedef uint16_t UnitType;
     long len  = size / sizeof(UnitType);
     vector<UnitType*> p(numThreads);
@@ -30,6 +30,7 @@ int main(int argc, char ** argv) {
     };
     vector<thread> threads;
     Timer timer;
+    timer.start();
     for (int i = 0; i < numThreads; ++i) {
         threads.emplace_back(worker, p[i]);
     }

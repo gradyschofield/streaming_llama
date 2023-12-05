@@ -118,14 +118,15 @@ public:
             atomic_load_explicit(&ci[i], memory_order_relaxed);
         }
         atomic_thread_fence(memory_order_acquire);
-        for (int i = 0; i < M; ++i) {
-            C[i] = 0;
-        }
-        for(int j = 0; j < numThreads; ++j) {
+        float * tmp = partialOut[0];
+        for(int j = 1; j < numThreads; ++j) {
             float * out = partialOut[j];
             for (int i = 0; i < M; ++i) {
-                C[i] += out[i];
+                tmp[i] += out[i];
             }
+        }
+        for (int i = 0; i < M; ++i) {
+            C[i] = tmp[i];
         }
         atomic_thread_fence(memory_order_release);
         atomic_store_explicit(&barrierCompletionIndicator, 1, memory_order_relaxed);
@@ -279,7 +280,7 @@ void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_ORDER ORDER,
         returnScratch(cScratch);
     } else {
         static Matvec * matvec = nullptr;
-        int numThreads = 16;
+        int numThreads = 8;
         if (!matvec) {
             matvec = new Matvec(numThreads);
         }

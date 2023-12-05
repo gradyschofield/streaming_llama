@@ -25,7 +25,7 @@ using namespace Common;
 int main(int argc, char ** argv) {
     //logger = ofstream("log");
     int maxSequenceLength = 100; // 19
-    int cacheSize = 500; // 0
+    int cacheSize = 5000; // 0
 #if MANUAL_TESTING==1
     string filename1 = "llama_model_7.bin";
     string filename2 = "llama_model_7_bf16.bin";
@@ -46,7 +46,8 @@ int main(int argc, char ** argv) {
     }
 #else
     Socket socket;
-    string filename = "release/llama_model_7_bf16.bin";
+    //string filename = "release/llama_model_7_bf16.bin";
+    string filename = "release/llama_model_13.bin";
     //string filename = "release/llama_model_notran_emb.bin";
     shared_ptr<LLamaModelInterface> model = createLlamaModel<Cpu>(filename, maxSequenceLength, cacheSize);
     while (true) {

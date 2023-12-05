@@ -94,6 +94,9 @@ public:
                         int seqlen,
                         shared_ptr<TransformerBlockScratch<T, P>> transformerBlockScratch,
                         EvaluationTimings & timings) {
+        if (layerIdx == 0) {
+            cout << "Num tokens so far: " << currentToken << endl;
+        }
         timings.start("Transformer input layer norm");
         Scratch<T> inputCopy = transformerBlockScratch->getInputCopyBuffer();
         T* inPtr = in.getPtr();
