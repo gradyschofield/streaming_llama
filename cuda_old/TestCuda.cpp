@@ -1,7 +1,7 @@
 #include<iostream>
 
-#include<Cuda.h>
-#include<Exception.h>
+#include"cuda/Cuda.h"
+#include"Exception.h"
 
 using namespace std;
 

@@ -35,9 +35,9 @@ if(NOT APPLE)
     set(CUDA_PTX_COMPILATION ON)
 
     set(CUDA_SRC
-        src/cuda/swilu.cu
-        src/cuda/rope.cu
-        src/cuda/layerNorm.cu
+            cuda_old/swilu.cu
+            cuda_old/rope.cu
+            cuda_old/layerNorm.cu
     )
 
     foreach(src ${CUDA_SRC})
@@ -68,8 +68,6 @@ set(SRC
         src/Bf16.h
         src/Checker.cpp
         src/Checker.h
-        src/Cuda.cpp
-        src/Cuda.h
         src/EvaluationTimings.h
         src/Exception.h
         src/LlamaModel.h
@@ -95,9 +93,6 @@ target_link_libraries(evaluator ${EXTRA_LFLAGS})
 
 add_executable(testSgemm src/TestSgemm.cpp src/Timer.cpp src/Timer.h)
 target_link_libraries(testSgemm ${EXTRA_LFLAGS})
-
-add_executable(testCuda ${SRC} ${COMMON_SRC} src/TestCuda.cpp)
-target_link_libraries(testCuda  ${EXTRA_LFLAGS} cuda cublas)
 
 add_executable(testMemoryBandwidth src/TestMemoryBandwidth.cpp src/Timer.cpp src/Timer.h)
 target_link_libraries(testMemoryBandwidth ${EXTRA_LFLAGS})

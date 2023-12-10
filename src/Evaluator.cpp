@@ -9,7 +9,14 @@
 #include<Timer.h>
 
 /*
+ * TOOD measure distribution of outputs for quantization purposes
+ * TODO write model files for quantized weights
+ *
  * TODO handle different number of kv heads for largest model
+ *
+ * TODO metal shaders for bfloat16
+ *      read matrices into memory
+ *
  */
 
 using namespace std;

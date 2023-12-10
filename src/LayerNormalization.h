@@ -6,7 +6,6 @@
 #define STREAMING_LLAMA_LAYERNORMALIZATION_H
 
 #include<Common.h>
-#include<Cuda.h>
 
 using namespace Common;
 
