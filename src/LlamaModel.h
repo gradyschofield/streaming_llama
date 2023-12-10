@@ -23,12 +23,12 @@ public:
     virtual ~LLamaModelInterface() {}
 };
 
-template<typename T, Processor P>
+template<typename T>
 class LlamaModel : public LLamaModelInterface {
-    shared_ptr<NonTransformerWeights<T, P>> nonTransformerWeights;
-    vector<shared_ptr<TransformerBlock<T, P>>> transformerBlocks;
+    shared_ptr<NonTransformerWeights<T>> nonTransformerWeights;
+    vector<shared_ptr<TransformerBlock<T>>> transformerBlocks;
     int tensorFile;
-    shared_ptr<TransformerBlockScratch<T, P>> transformerBlockScratch;
+    shared_ptr<TransformerBlockScratch<T>> transformerBlockScratch;
     LlamaModelParams llamaModelParams;
     T normEps;
     FileStorageFormat fileStorageFormat;
@@ -50,7 +50,7 @@ public:
         normEps = llamaModelParams.normEps;
 
         int layerCount = getLayerCount(tensorFileInfo);
-        transformerBlockScratch = make_shared<TransformerBlockScratch<T, P>>(
+        transformerBlockScratch = make_shared<TransformerBlockScratch<T>>(
                 maxSequenceLength, cacheSize, llamaModelParams.numHeads,
                         tensorFileInfo.at("tok_embeddings.weight").leadingDimension,
                         tensorFileInfo.at("layers.0.attention.wq.weight").leadingDimension,
@@ -63,9 +63,9 @@ public:
                         tensorFileInfo.at("tok_embeddings.weight").numColumns,
                         layerCount);
         tensorFile = open(filename.c_str(), O_RDONLY);
-        nonTransformerWeights = make_shared<NonTransformerWeights<T, P>>(tensorFileInfo, tensorFile, checker);
+        nonTransformerWeights = make_shared<NonTransformerWeights<T>>(tensorFileInfo, tensorFile, checker);
         for(int i = 0; i < layerCount; ++i) {
-            transformerBlocks.push_back(make_shared<TransformerBlock<T, P>>(
+            transformerBlocks.push_back(make_shared<TransformerBlock<T>>(
                     i,
                     tensorFileInfo,
                     tensorFile,
@@ -124,7 +124,6 @@ public:
 
 };
 
-template<Processor P>
 shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
                                                  int maxSequenceLength,
                                                  int cacheSize,
@@ -137,9 +136,9 @@ shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
     FileStorageFormat fileStorageFormat = intToFileStorageFormat(type);
     switch(fileStorageFormat) {
         case Common::Bf16Aligned:
-            return make_shared<LlamaModel<Bf16, P>>(filename, maxSequenceLength, cacheSize, checker);
+            return make_shared<LlamaModel<Bf16>>(filename, maxSequenceLength, cacheSize, checker);
         case Common::Fp32Aligned:
-            return make_shared<LlamaModel<float, P>>(filename, maxSequenceLength, cacheSize, checker);
+            return make_shared<LlamaModel<float>>(filename, maxSequenceLength, cacheSize, checker);
     }
     return nullptr; // unreachable
 }

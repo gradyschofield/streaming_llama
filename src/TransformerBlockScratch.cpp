@@ -6,13 +6,13 @@
 #include<TransformerBlockScratch.h>
 
 template<>
-void allocateScratch<float, Cpu>(size_t &totalAlloc, void ** p, int alignment, size_t size) {
+void allocateScratch<float>(size_t &totalAlloc, void ** p, int alignment, size_t size) {
     totalAlloc += size;
     posix_memalign(p, alignment, size);
 }
 
 template<>
-void allocateScratch<Bf16, Cpu>(size_t &totalAlloc, void ** p, int alignment, size_t size) {
+void allocateScratch<Bf16>(size_t &totalAlloc, void ** p, int alignment, size_t size) {
     totalAlloc += size;
     posix_memalign(p, alignment, size);
 }

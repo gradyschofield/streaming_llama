@@ -19,7 +19,7 @@
 
 using namespace std;
 
-template<typename T, Processor P>
+template<typename T>
 class NonTransformerWeights {
     Weights<T> tokenEmbeddings;
     Weights<T> ropeFreqs;
@@ -53,11 +53,6 @@ public:
         ropeFreqs = Weights<T>(mapOffset, tensorInfoMap.at("rope.freqs"));
         outputNormalizers = Weights<T>(mapOffset, tensorInfoMap.at("norm.weight"));
         outputWeights = Weights<T>(mapOffset, tensorInfoMap.at("output.weight"));
-        if (P == Gpu) {
-            /*
-             * Allocate GPU memory, copy to GPU, unmap file
-             */
-        }
     }
 
     ~NonTransformerWeights() {
@@ -100,7 +95,7 @@ public:
     }
 
     void applyOutputLayer(Scratch<T> in, Scratch<T> out, int seqlen, float normEps) {
-        LayerNormalization<T, P>::exec(outputNormalizers.getPtr(mapAddress),
+        LayerNormalization<T>::exec(outputNormalizers.getPtr(mapAddress),
                                        in.getPtr(),
                                        outputWeights.getNumColumns(),
                                        in.getLeadingDimension(),
@@ -113,7 +108,7 @@ public:
                                                      in.getLeadingDimension()));
         }
 
-        multiplyMatrices<T, P>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+        multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                outputWeights.getNumRows(), seqlen, outputWeights.getNumColumns(),
                                1.0,
                                outputWeights.getPtr(mapAddress),

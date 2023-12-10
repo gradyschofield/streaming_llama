@@ -10,15 +10,8 @@
 
 using namespace Common;
 
-template<typename T, Processor P>
-class LayerNormalization {
-public:
-    static void exec(T *weights, T *src, int numRows, int leadingDimension, int seqlen, T normEps);
-
-};
-
 template<typename T>
-class LayerNormalization<T, Cpu> {
+class LayerNormalization {
 public:
     static void exec(T *weights, T *src, int numRows, int leadingDimension, int seqlen, T normEps) {
         for (int j = 0; j < seqlen; ++j) {
@@ -33,22 +26,6 @@ public:
             }
         }
     }
-};
-
-template<typename T>
-class LayerNormalization<T, Gpu> {
-public:
-#ifdef __APPLE__
-    static void exec(T *weights, T *src, int numRows, int leadingDimension, int seqlen, T normEps) {
-        throw Exception("There is no Gpu implementations of layerNormalization for Apple yet.");
-    }
-#else
-    static void exec(T *weights, T *src, int numRows, int leadingDimension, int seqlen, T normEps) {
-        Cuda * cuda = getCuda();
-        void * args = {};
-        cuda->launchKernel("layerNormBf16", args);
-    }
-#endif
 };
 
 #endif //STREAMING_LLAMA_LAYERNORMALIZATION_H

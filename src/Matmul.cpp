@@ -22,7 +22,7 @@ using namespace Common;
 
 #ifdef __APPLE__
 template<>
-void multiplyMatrices<float, Cpu>(const enum CBLAS_ORDER ORDER,
+void multiplyMatrices<float>(const enum CBLAS_ORDER ORDER,
                                   const enum CBLAS_TRANSPOSE TRANSA,
                                   const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
                                   const int K, const float ALPHA, const float * A, const int LDA,
@@ -243,12 +243,12 @@ public:
 
 
 template<>
-void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_ORDER ORDER,
-                                 const enum CBLAS_TRANSPOSE TRANSA,
-                                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                                 const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
-                                 const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
-                                 const int LDC) {
+void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
+                            const enum CBLAS_TRANSPOSE TRANSA,
+                            const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                            const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
+                            const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
+                            const int LDC) {
     int aNumRows = TRANSA == CblasTrans ? K : M;
     int aNumCols = TRANSA == CblasTrans ? M : K;
     if (N > 1) {
@@ -291,7 +291,7 @@ void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_ORDER ORDER,
 }
 #else
 template<>
-void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_LAYOUT ORDER,
+void multiplyMatrices<Bf16>(const enum CBLAS_LAYOUT ORDER,
                                  const enum CBLAS_TRANSPOSE TRANSA,
                                  const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
                                  const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
@@ -323,16 +323,4 @@ void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_LAYOUT ORDER,
 #ifdef __APPLE__
 #else
 
-#include<Cuda.h>
-
-template<>
-void multiplyMatrices<Bf16, Gpu>(const enum CBLAS_LAYOUT ORDER,
-                                  const enum CBLAS_TRANSPOSE TRANSA,
-                                  const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                                  const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
-                                  const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
-                                  const int LDC) {
-    Cuda * cuda = getCuda();
-    cuda->matmul(TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
-}
 #endif

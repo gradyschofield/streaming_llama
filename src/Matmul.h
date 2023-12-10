@@ -16,7 +16,7 @@
 using namespace Common;
 
 #ifdef __APPLE__
-template<typename T, Processor P>
+template<typename T>
 void multiplyMatrices(const enum CBLAS_ORDER ORDER,
                       const enum CBLAS_TRANSPOSE TRANSA,
                       const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
@@ -24,7 +24,7 @@ void multiplyMatrices(const enum CBLAS_ORDER ORDER,
                       const T * B, const int LDB, const T BETA, T * C,
                       const int LDC);
 #else
-template<typename T, Processor P>
+template<typename T>
 void multiplyMatrices(const enum CBLAS_LAYOUT ORDER,
                       const enum CBLAS_TRANSPOSE TRANSA,
                       const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,

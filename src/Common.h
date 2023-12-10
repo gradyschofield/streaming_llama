@@ -23,11 +23,6 @@ namespace Common {
         Bf16Aligned
     };
 
-    enum Processor {
-        Cpu,
-        Gpu 
-    };
-
     uint8_t fileStorageFormatToInt(FileStorageFormat fileStorageFormat);
     FileStorageFormat intToFileStorageFormat(uint8_t i);
 
