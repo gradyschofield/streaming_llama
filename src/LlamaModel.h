@@ -136,6 +136,7 @@ shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
     FileStorageFormat fileStorageFormat = intToFileStorageFormat(type);
     switch(fileStorageFormat) {
         case Common::Bf16Aligned:
+        case Common::Bf16Unaligned:
             return make_shared<LlamaModel<Bf16>>(filename, maxSequenceLength, cacheSize, checker);
         case Common::Fp32Aligned:
             return make_shared<LlamaModel<float>>(filename, maxSequenceLength, cacheSize, checker);

@@ -110,6 +110,8 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> con
     int leadingDim = 0;
     if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
         leadingDim = findAlignment(numRows, 64);
+    } else if (fileStorageFormat == Bf16Unaligned){
+        leadingDim = numRows;
     } else {
         cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
         exit(1);
@@ -153,6 +155,8 @@ pair<string, TensorFileInfo> consolidateTensorFragments(map<string, int64_t> con
         int newLeadingDim = 0;
         if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
             newLeadingDim = findAlignment(newNumRows, 64);
+        } else if (fileStorageFormat == Bf16Unaligned){
+            newLeadingDim = newNumRows;
         } else {
             cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
             exit(1);
@@ -192,6 +196,8 @@ pair<string, TensorFileInfo> writeNonParallelizedTensor(string const & tensorNam
     int leadingDim = 0;
     if (fileStorageFormat == Fp32Aligned || fileStorageFormat == Bf16Aligned) {
         leadingDim = findAlignment(rows, 64);
+    } else if (fileStorageFormat == Bf16Unaligned){
+        leadingDim = rows;
     } else {
         cout << "Need to handle this fileStorageFormat in consolidateTensorFragments\n";
         exit(1);
@@ -299,9 +305,11 @@ void writeOutputFormat(ofstream & ofs, FileStorageFormat fileStorageFormat) {
 }
 
 FileStorageFormat stringToFileStorageFormat(string s) {
-    if(s == "bf16") {
+    if(s == "bf16a") {
         return Bf16Aligned;
-    } else if(s == "fp32") {
+    } else if(s == "bf16") {
+        return Bf16Unaligned;
+    } else if(s == "fp32a") {
         return Fp32Aligned;
     } else {
         stringstream sstr;

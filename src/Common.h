@@ -20,7 +20,8 @@ namespace Common {
 
     enum FileStorageFormat {
         Fp32Aligned,
-        Bf16Aligned
+        Bf16Aligned,
+        Bf16Unaligned
     };
 
     uint8_t fileStorageFormatToInt(FileStorageFormat fileStorageFormat);

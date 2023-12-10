@@ -9,11 +9,6 @@
 #include<Timer.h>
 
 /*
- * TODO Cuda benchmark gemmEx
- * TODO full Checker verification in the transformer block
- * TODO Cuda scratch buffers
- * TODO Cuda matrixMultiply
- * TODO Cuda kernels layer norm, toary embedding, swilu
  * TODO handle different number of kv heads for largest model
  */
 

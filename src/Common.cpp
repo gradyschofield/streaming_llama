@@ -19,6 +19,8 @@ namespace Common {
                 return 0;
             case Fp32Aligned:
                 return 1;
+            case Bf16Unaligned:
+                return 2;
         }
         return 255; // unreachable
     }
@@ -29,6 +31,8 @@ namespace Common {
                 return Bf16Aligned;
             case 1:
                 return Fp32Aligned;
+            case 2:
+                return Bf16Unaligned;
             default:
                 stringstream sstr;
                 sstr << "The file format integer, " << (int)i << ", was neither 0 or 1.  Do you need to add code for this format?";
