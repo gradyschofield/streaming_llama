@@ -29,67 +29,29 @@ class LlamaModel : public LLamaModelInterface {
     vector<shared_ptr<TransformerBlock<T, P>>> transformerBlocks;
     int tensorFile;
     shared_ptr<TransformerBlockScratch<T, P>> transformerBlockScratch;
-    int numHeads;
-    int numKvHeads;
+    LlamaModelParams llamaModelParams;
     T normEps;
     FileStorageFormat fileStorageFormat;
     shared_ptr<Checker> checker;
     EvaluationTimings timings;
 
-    map<string, TensorFileInfo> readTensorFileInfoTable(ifstream & ifs) {
-        int64_t tensorOffsetTablePos = 0;
-        ifs.seekg(0);
-        ifs.read((char*)&tensorOffsetTablePos, 8);
-        ifs.seekg(tensorOffsetTablePos);
-        int numTensors;
-        ifs.read((char*) &numTensors, 4);
-        map<string, TensorFileInfo> ret;
-        for(int i = 0; i < numTensors; ++i) {
-            int nameLen = 0;
-            ifs.read((char*) &nameLen, 4);
-            vector<char> nameBuffer(nameLen);
-            ifs.read((char*) nameBuffer.data(), nameLen);
-            TensorFileInfo tfi;
-            ifs.read((char*) &tfi.offset, 8);
-            ifs.read((char*) &tfi.numRows, 4);
-            ifs.read((char*) &tfi.numColumns, 4);
-            ifs.read((char*) &tfi.leadingDimension, 4);
-            ret.emplace(string(nameBuffer.data(), nameBuffer.size()), tfi);
-        }
-        return ret;
-    }
-
-    void readParams(ifstream & ifs) {
-        float normEpsFloat;
-        ifs.seekg(8);
-        ifs.read((char*) &numHeads, 4);
-        ifs.read((char*) &numKvHeads, 4);
-        ifs.read((char*) &normEpsFloat, 4);
-        normEps = normEpsFloat;
-        cout << "numHeads: " << numHeads << "\n";
-        cout << "numKvHeads: " << numKvHeads << "\n";
-        cout << "normEps: " << normEps << "\n";
-    }
 
 public:
-    LlamaModel(string const & tensorFilename,
+    LlamaModel(string const & filename,
                int maxSequenceLength,
                int cacheSize,
                shared_ptr<Checker> checker = nullptr)
             : checker(checker)
     {
-        ifstream ifs(tensorFilename, ios::binary);
-        ifs.seekg(20);
-        uint8_t storageType;
-        ifs.read((char*)&storageType, 1);
-        fileStorageFormat = intToFileStorageFormat(storageType);
-        map<string, TensorFileInfo> tensorFileInfo = readTensorFileInfoTable(ifs);
-        readParams(ifs);
-        ifs.close();
+        cout << "Loading file " << filename << "\n";
+        fileStorageFormat = readFileStorageFormat(filename);
+        map<string, TensorFileInfo> tensorFileInfo = readTensorFileInfoTable(filename);
+        llamaModelParams = readParams(filename);
+        normEps = llamaModelParams.normEps;
 
         int layerCount = getLayerCount(tensorFileInfo);
         transformerBlockScratch = make_shared<TransformerBlockScratch<T, P>>(
-                maxSequenceLength, cacheSize, numHeads,
+                maxSequenceLength, cacheSize, llamaModelParams.numHeads,
                         tensorFileInfo.at("tok_embeddings.weight").leadingDimension,
                         tensorFileInfo.at("layers.0.attention.wq.weight").leadingDimension,
                         tensorFileInfo.at("layers.0.attention.wk.weight").leadingDimension,
@@ -100,15 +62,16 @@ public:
                         tensorFileInfo.at("layers.0.feed_forward.w3.weight").leadingDimension,
                         tensorFileInfo.at("tok_embeddings.weight").numColumns,
                         layerCount);
-        tensorFile = open(tensorFilename.c_str(), O_RDONLY);
+        tensorFile = open(filename.c_str(), O_RDONLY);
         nonTransformerWeights = make_shared<NonTransformerWeights<T, P>>(tensorFileInfo, tensorFile, checker);
         for(int i = 0; i < layerCount; ++i) {
-            transformerBlocks.push_back(make_shared<TransformerBlock<T, P>>(i,
+            transformerBlocks.push_back(make_shared<TransformerBlock<T, P>>(
+                    i,
                     tensorFileInfo,
                     tensorFile,
                     normEps,
                     nonTransformerWeights->getRopeFreqPtr(),
-                    numHeads,
+                    llamaModelParams.numHeads,
                     checker));
         }
     }

@@ -37,9 +37,19 @@ namespace Common {
         int numColumns;
         int leadingDimension;
     };
+
+    struct LlamaModelParams {
+        int numHeads;
+        int numKvHeads;
+        float normEps;
+    };
+
     vector<pair<string, TensorFileInfo>> getTensorsForLayer(int layer, map<string, TensorFileInfo> const & tensorFileInfo);
     vector<pair<string, TensorFileInfo>> getNonTransformerBlockTensors(map<string, TensorFileInfo> const & tensorFileInfo);
     int getLayerCount(map<string, TensorFileInfo> const & tensorFileInfo);
+    map<string, TensorFileInfo> readTensorFileInfoTable(string filename);
+    LlamaModelParams readParams(string filename);
+    FileStorageFormat readFileStorageFormat(string filename);
 
     int findAlignment(int elements, int alignmentBytes);
 

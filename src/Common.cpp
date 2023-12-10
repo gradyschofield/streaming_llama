@@ -81,4 +81,46 @@ namespace Common {
         if (bytesPastAlignment == 0) return elements;
         else return (1 + ((elements * 4) / alignmentBytes)) * alignmentBytes / 4;
     }
+
+    map<string, TensorFileInfo> readTensorFileInfoTable(string filename) {
+        ifstream ifs(filename, ios::binary);
+        int64_t tensorOffsetTablePos = 0;
+        ifs.seekg(0);
+        ifs.read((char*)&tensorOffsetTablePos, 8);
+        ifs.seekg(tensorOffsetTablePos);
+        int numTensors;
+        ifs.read((char*) &numTensors, 4);
+        map<string, TensorFileInfo> ret;
+        for(int i = 0; i < numTensors; ++i) {
+            int nameLen = 0;
+            ifs.read((char*) &nameLen, 4);
+            vector<char> nameBuffer(nameLen);
+            ifs.read((char*) nameBuffer.data(), nameLen);
+            TensorFileInfo tfi;
+            ifs.read((char*) &tfi.offset, 8);
+            ifs.read((char*) &tfi.numRows, 4);
+            ifs.read((char*) &tfi.numColumns, 4);
+            ifs.read((char*) &tfi.leadingDimension, 4);
+            ret.emplace(string(nameBuffer.data(), nameBuffer.size()), tfi);
+        }
+        return ret;
+    }
+
+    LlamaModelParams readParams(string filename) {
+        ifstream ifs(filename, ios::binary);
+        LlamaModelParams llamaModelParams;
+        ifs.seekg(8);
+        ifs.read((char*) &llamaModelParams.numHeads, 4);
+        ifs.read((char*) &llamaModelParams.numKvHeads, 4);
+        ifs.read((char*) &llamaModelParams.normEps, 4);
+        return llamaModelParams;
+    }
+
+    FileStorageFormat readFileStorageFormat(string filename) {
+        ifstream ifs(filename, ios::binary);
+        ifs.seekg(20);
+        uint8_t storageType;
+        ifs.read((char*)&storageType, 1);
+        return intToFileStorageFormat(storageType);
+    }
 }
