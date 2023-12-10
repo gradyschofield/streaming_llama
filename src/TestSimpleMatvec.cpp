@@ -24,7 +24,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
     long matrixSize = M * K * 4;
-    long numMatrices = 14E9 / matrixSize;
+    long numMatrices = 12E9 / matrixSize;
     vector<float*> A(numMatrices);
     vector<float*> x(numMatrices);
     vector<float*> y(numMatrices);
@@ -69,11 +69,17 @@ int main(int argc, char ** argv) {
             float * colp = &mat[startColumn * M];
             long start = startColumn * M;
             long end = endColumn * M;
-            for (int col = startColumn; col < endColumn; col += 1) {
+#if 1
+            for (int col = startColumn; col < endColumn; ++col) {
                 float * col1 = &mat[col*M];
                 for (int row = 0; row < M; ++row) {
                     tmp[row] += col1[row] * _x[col];
                 }
+#else
+            for (int col = startColumn; col < endColumn; ++col) {
+                float * col1 = &mat[col*M];
+                vDSP_vsma(tmp, 1, &_x[col], col1, 1, tmp, 1, M);
+#endif
             }
             atomic_thread_fence(memory_order_release);
             atomic_store_explicit(&ci[threadIdx], 1, memory_order_relaxed);

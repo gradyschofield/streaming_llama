@@ -240,6 +240,8 @@ public:
 
 
 #ifdef __APPLE__
+
+
 template<>
 void multiplyMatrices<Bf16, Cpu>(const enum CBLAS_ORDER ORDER,
                                  const enum CBLAS_TRANSPOSE TRANSA,

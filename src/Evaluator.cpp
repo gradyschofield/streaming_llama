@@ -46,8 +46,8 @@ int main(int argc, char ** argv) {
     }
 #else
     Socket socket;
-    //string filename = "release/llama_model_7_bf16.bin";
-    string filename = "release/llama_model_13.bin";
+    string filename = "release/llama_model_7_bf16.bin";
+    //string filename = "release/llama_model_13.bin";
     //string filename = "release/llama_model_notran_emb.bin";
     shared_ptr<LLamaModelInterface> model = createLlamaModel<Cpu>(filename, maxSequenceLength, cacheSize);
     while (true) {
