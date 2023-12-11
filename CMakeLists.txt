@@ -4,7 +4,7 @@ project(streaming_llama LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 
 set(EXTRA_CXX_FLAGS "-DACCELERATE_NEW_LAPACK")
-set(EXTRA_LFLAGS "-framework Accelerate -framework Foundation -framework MetalPerformanceShaders")
+set(EXTRA_LFLAGS "-framework Accelerate -framework Foundation -framework QuartzCore -framework Metal")
 
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall ${EXTRA_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g ${EXTRA_CXX_FLAGS}")
@@ -30,6 +30,8 @@ set(SRC
         src/Matmul.cpp
         src/Matmul.h
         src/Metal.hpp
+        src/MetalHelpers.cpp
+        src/MetalHelpers.h
         src/NonTransformerWeights.h
         src/Scratch.h
         src/Socket.h

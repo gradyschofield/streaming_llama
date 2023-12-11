@@ -25,8 +25,8 @@ public:
 
 template<typename T>
 class LlamaModel : public LLamaModelInterface {
-    shared_ptr<NonTransformerWeights<T>> nonTransformerWeights;
-    vector<shared_ptr<TransformerBlock<T>>> transformerBlocks;
+    unique_ptr<NonTransformerWeights<T>> nonTransformerWeights;
+    vector<unique_ptr<TransformerBlock<T>>> transformerBlocks;
     int tensorFile;
     shared_ptr<TransformerBlockScratch<T>> transformerBlockScratch;
     LlamaModelParams llamaModelParams;
@@ -40,6 +40,7 @@ public:
     LlamaModel(string const & filename,
                int maxSequenceLength,
                int cacheSize,
+               bool unmapWeights = false,
                shared_ptr<Checker> checker = nullptr)
             : checker(checker)
     {
@@ -63,15 +64,16 @@ public:
                         tensorFileInfo.at("tok_embeddings.weight").numColumns,
                         layerCount);
         tensorFile = open(filename.c_str(), O_RDONLY);
-        nonTransformerWeights = make_shared<NonTransformerWeights<T>>(tensorFileInfo, tensorFile, checker);
+        nonTransformerWeights = make_unique<NonTransformerWeights<T>>(tensorFileInfo, tensorFile, checker);
         for(int i = 0; i < layerCount; ++i) {
-            transformerBlocks.push_back(make_shared<TransformerBlock<T>>(
+            transformerBlocks.push_back(make_unique<TransformerBlock<T>>(
                     i,
                     tensorFileInfo,
                     tensorFile,
                     normEps,
                     nonTransformerWeights->getRopeFreqPtr(),
                     llamaModelParams.numHeads,
+                    unmapWeights,
                     checker));
         }
     }
@@ -124,9 +126,10 @@ public:
 
 };
 
-shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
+unique_ptr<LLamaModelInterface> createLlamaModel(string filename,
                                                  int maxSequenceLength,
                                                  int cacheSize,
+                                                 bool unmapWeights = true,
                                                  shared_ptr<Checker> checker = nullptr) {
     ifstream ifs(filename);
     ifs.seekg(20);
@@ -137,9 +140,9 @@ shared_ptr<LLamaModelInterface> createLlamaModel(string filename,
     switch(fileStorageFormat) {
         case Common::Bf16Aligned:
         case Common::Bf16Unaligned:
-            return make_shared<LlamaModel<Bf16>>(filename, maxSequenceLength, cacheSize, checker);
+            return make_unique<LlamaModel<Bf16>>(filename, maxSequenceLength, cacheSize, unmapWeights, checker);
         case Common::Fp32Aligned:
-            return make_shared<LlamaModel<float>>(filename, maxSequenceLength, cacheSize, checker);
+            return make_unique<LlamaModel<float>>(filename, maxSequenceLength, cacheSize, unmapWeights, checker);
     }
     return nullptr; // unreachable
 }

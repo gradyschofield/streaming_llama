@@ -39,6 +39,7 @@ class TransformerBlock {
     T * ropeFreqs;
     int numHeads;
     int layerIdx;
+    bool unmapWeights;
     shared_ptr<Checker> checker;
 
 public:
@@ -48,9 +49,15 @@ public:
                      T normEps,
                      T * ropeFreqs,
                      int numHeads,
+                     bool unmapWeights = true,
                      shared_ptr<Checker> checker = nullptr)
-            : tensorFile(tensorFile), normEps(normEps), ropeFreqs(ropeFreqs), numHeads(numHeads),
-              layerIdx(layer), checker(checker)
+            : tensorFile(tensorFile),
+              normEps(normEps),
+              ropeFreqs(ropeFreqs),
+              numHeads(numHeads),
+              layerIdx(layer),
+              unmapWeights(unmapWeights),
+              checker(checker)
     {
         vector<pair<string, TensorFileInfo>> layerInfos = getTensorsForLayer(layer, tensorFileInfo);
         mapOffset = layerInfos.front().second.offset;
@@ -76,17 +83,22 @@ public:
     }
 
     ~TransformerBlock() {
-        if(mapAddress) ::munmap(mapAddress, mapLength);
+        if(mapAddress) {
+            ::munmap(mapAddress, mapLength);
+            mapAddress = nullptr;
+        }
     }
 
     void mmap() {
-        if(mapAddress) return;
+        if (mapAddress) return;
         mapAddress = ::mmap(nullptr, mapLength, PROT_READ, MAP_SHARED, tensorFile, mapOffset);
     }
 
     void munmap() {
-        ::munmap(mapAddress, mapLength);
-        mapAddress = nullptr;
+        if (unmapWeights) {
+            ::munmap(mapAddress, mapLength);
+            mapAddress = nullptr;
+        }
     }
 
 

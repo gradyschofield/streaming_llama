@@ -10,17 +10,19 @@
 #include<iostream>
 #include<list>
 #include<mutex>
+#include<set>
 #include<thread>
 #include<unordered_map>
 
 #include<Bf16.h>
 #include<Common.h>
 #include<Matmul.h>
+#include<MetalHelpers.h>
+
 
 using namespace std;
 using namespace Common;
 
-#ifdef __APPLE__
 template<>
 void multiplyMatrices<float>(const enum CBLAS_ORDER ORDER,
                                   const enum CBLAS_TRANSPOSE TRANSA,
@@ -30,17 +32,6 @@ void multiplyMatrices<float>(const enum CBLAS_ORDER ORDER,
                                   const int LDC) {
     cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
 }
-#else
-template<>
-void multiplyMatrices<float, Cpu>(const enum CBLAS_LAYOUT ORDER,
-                                  const enum CBLAS_TRANSPOSE TRANSA,
-                                  const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                                  const int K, const float ALPHA, const float * A, const int LDA,
-                                  const float * B, const int LDB, const float BETA, float * C,
-                                  const int LDC) {
-    cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC);
-}
-#endif
 
 struct ScratchBuffer {
     int numRows;
@@ -238,9 +229,10 @@ public:
     }
 };
 
-
-#ifdef __APPLE__
-
+set<tuple<int,int>> leftInput;
+set<tuple<int,int>> rightInput;
+set<tuple<int,int>> output;
+long numCalls = 0;
 
 template<>
 void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
@@ -268,6 +260,9 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
                 bBuffer[i + bScratch.leadingDimension * j] = B[i + LDB * j].toFloat();
             }
         }
+        leftInput.insert(make_tuple(aNumRows, aNumCols));
+        rightInput.insert(make_tuple(K, N));
+        output.insert(make_tuple(M, N));
         cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K,
                     ALPHA.toFloat(), aBuffer, aScratch.leadingDimension,
                     bBuffer, bScratch.leadingDimension,
@@ -281,46 +276,35 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
         returnScratch(bScratch);
         returnScratch(cScratch);
     } else {
+        leftInput.insert(make_tuple(M, K));
+        rightInput.insert(make_tuple(K, N));
+        output.insert(make_tuple(M, N));
         static Matvec * matvec = nullptr;
         int numThreads = 8;
         if (!matvec) {
             matvec = new Matvec(numThreads);
         }
         matvec->run(M, N, K, TRANSA, A, LDA, B, C);
-    }
-}
-#else
-template<>
-void multiplyMatrices<Bf16>(const enum CBLAS_LAYOUT ORDER,
-                                 const enum CBLAS_TRANSPOSE TRANSA,
-                                 const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
-                                 const int K, const Bf16 ALPHA, const Bf16 * A, const int LDA,
-                                 const Bf16 * B, const int LDB, const Bf16 BETA, Bf16 * C,
-                                 const int LDC) {
-    if (N > 1) {
-        ScratchBuffer cScratch = getScratch(M, N);
-        cblas_gemm_bf16bf16f32(ORDER, TRANSA, TRANSB, M, N, K,
-                               ALPHA.toFloat(), (uint16_t const *)A, LDA,
-                               (uint16_t const *)B, LDB,
-                               BETA.toFloat(), cScratch.buffer, cScratch.leadingDimension);
-        for(int j = 0; j < N; ++j) {
-            for (int i = 0; i < M; ++i) {
-                C[i + LDC*j] = cScratch.buffer[i + cScratch.leadingDimension*j];
+        leftInput.insert(make_tuple(M, K));
+        rightInput.insert(make_tuple(K, N));
+        output.insert(make_tuple(M, N));
+        MetalHelpers::getBuffer(A);
+        MetalHelpers::getBuffer(B);
+        MetalHelpers::getBuffer(C);
+        ++numCalls;
+        if (numCalls % 10000 == 0) {
+            cout << "A inputs: \n";
+            for( auto a : leftInput) {
+                cout << get<0>(a) << " x " << get<1>(a) << "\n";
+            }
+            cout << "B inputs: \n";
+            for( auto a : rightInput) {
+                cout << get<0>(a) << " x " << get<1>(a) << "\n";
+            }
+            cout << "C outputs: \n";
+            for( auto a : output) {
+                cout << get<0>(a) << " x " << get<1>(a) << "\n";
             }
         }
-        returnScratch(cScratch);
-    } else {
-        static Matvec * matvec = nullptr;
-        int numThreads = 24;
-        if (!matvec) {
-            matvec = new Matvec(numThreads);
-        }
-        matvec->run(M, N, K, TRANSA, A, LDA, B, C);
     }
 }
-#endif
-
-#ifdef __APPLE__
-#else
-
-#endif

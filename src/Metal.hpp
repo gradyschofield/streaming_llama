@@ -20689,4 +20689,3 @@ _MTL_INLINE void MTL::VisibleFunctionTable::setFunctions(const MTL::FunctionHand
     ((major < METALCPP_VERSION_MAJOR) || \
     (major == METALCPP_VERSION_MAJOR && minor < METALCPP_VERSION_MINOR) || \
     (major == METALCPP_VERSION_MAJOR && minor == METALCPP_VERSION_MINOR && patch <= METALCPP_VERSION_PATCH))
-

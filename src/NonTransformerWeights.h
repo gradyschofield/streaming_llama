@@ -31,8 +31,11 @@ class NonTransformerWeights {
     shared_ptr<Checker> checker;
 
 public:
-    NonTransformerWeights(map<string, TensorFileInfo> const & tensorFileInfo, int tensorFile, shared_ptr<Checker> checker = nullptr)
-            : checker(checker)
+    NonTransformerWeights(
+            map<string, TensorFileInfo> const & tensorFileInfo,
+            int tensorFile,
+            shared_ptr<Checker> checker = nullptr)
+        : checker(checker)
     {
         vector<pair<string, TensorFileInfo>> tensorInfos = getNonTransformerBlockTensors(tensorFileInfo);
         mapOffset = tensorInfos.front().second.offset;
@@ -56,7 +59,10 @@ public:
     }
 
     ~NonTransformerWeights() {
-        if(mapAddress) munmap(mapAddress, mapLength);
+        if (mapAddress) {
+            munmap(mapAddress, mapLength);
+            mapAddress = nullptr;
+        }
     }
 
     T * getRopeFreqPtr() {
@@ -70,7 +76,7 @@ public:
     void getTokenEmbedding(vector<int> const & tokens, T * out) {
         T const * ptr = tokenEmbeddings.getPtr(mapAddress);
         int i = 0;
-        for(int tok : tokens) {
+        for (int tok : tokens) {
             memcpy(&out[i* tokenEmbeddings.getLeadingDimension()],
                    &ptr[tok * tokenEmbeddings.getLeadingDimension()],
                    tokenEmbeddings.getNumRows() * sizeof(T));
@@ -101,7 +107,7 @@ public:
                                        in.getLeadingDimension(),
                                        seqlen,
                                        normEps);
-        if(checker) {
+        if (checker) {
             checker->submitResult(createDataAccessor(in.getPtr(),
                                                      {outputWeights.getNumColumns(),
                                                       seqlen},

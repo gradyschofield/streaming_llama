@@ -12,7 +12,6 @@
 using namespace std;
 
 class EvaluationTimings {
-    long evaluation = 0;
     list<char const *> appearanceOrder;
     map<char const *, long> times;
     map<char const *, timespec> currentTime;

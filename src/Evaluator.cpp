@@ -28,13 +28,14 @@ int main(int argc, char ** argv) {
     //logger = ofstream("log");
     int maxSequenceLength = 100; // 19
     int cacheSize = 5000; // 0
+    bool unmapWeights = false;
 #if MANUAL_TESTING==1
     string filename1 = "llama_model_7.bin";
     string filename2 = "llama_model_7_bf16.bin";
     float bfloat16Tolerance = 2 * pow(2,-7);
     shared_ptr<Checker> checker = make_shared<Checker>(bfloat16Tolerance);
-    shared_ptr<LLamaModelInterface> model1 = createLlamaModel<Cpu>(filename1, maxSequenceLength, cacheSize, checker);
-    shared_ptr<LLamaModelInterface> model2 = createLlamaModel<Cpu>(filename2, maxSequenceLength, cacheSize, checker);
+    shared_ptr<LLamaModelInterface> model1 = createLlamaModel(filename1, maxSequenceLength, cacheSize, unmapWeights, checker);
+    shared_ptr<LLamaModelInterface> model2 = createLlamaModel(filename2, maxSequenceLength, cacheSize, unmapWeights, checker);
     auto runEvaluate = [](shared_ptr<LLamaModelInterface> model, vector<float> & ret) {
         ret = model->evaluate({1,518,25580,29962,6028,366,2436,263,22172,3186,1824,297,315,1817,29973,29961,29914,25580,29962});
     };
@@ -51,7 +52,7 @@ int main(int argc, char ** argv) {
     string filename = "release/llama_model_7_bf16.bin";
     //string filename = "release/llama_model_13.bin";
     //string filename = "release/llama_model_notran_emb.bin";
-    shared_ptr<LLamaModelInterface> model = createLlamaModel(filename, maxSequenceLength, cacheSize);
+    unique_ptr<LLamaModelInterface> model = createLlamaModel(filename, maxSequenceLength, cacheSize, unmapWeights);
     while (true) {
         int numTokens = 0;
         vector<int> tokens;
