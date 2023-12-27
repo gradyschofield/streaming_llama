@@ -17,7 +17,7 @@ class Weights {
     int numRows;
     int numColumns;
     int leadingDimension;
-    shared_ptr<MetalHelpers::MetalBuffer> metalBuffer;
+    shared_ptr<Metal::MetalBuffer> metalBuffer;
 
 public:
     Weights() {
@@ -33,7 +33,7 @@ public:
                 numRows(tfi.numRows),
                 numColumns(tfi.numColumns),
                 leadingDimension(tfi.leadingDimension),
-                metalBuffer(make_shared<MetalHelpers::MetalBuffer>())
+                metalBuffer(make_shared<Metal::MetalBuffer>())
     {
     }
 

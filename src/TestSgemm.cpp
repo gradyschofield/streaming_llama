@@ -20,9 +20,9 @@ using namespace std;
 int main(int argc, char **argv) {
     typedef float fptype;
     vector<thread> threads;
-    int M = 256;
-    int K = 256;
-    int N = 256;
+    int M = 4096;
+    int K = 4096;
+    int N = 4096;
     int numThreads = 1;
     vector<fptype*> a(numThreads);
     vector<fptype*> b(numThreads);
@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
         posix_memalign((void **) &b[i], 256, K * N * sizeof(fptype));
         posix_memalign((void **) &c[i], 256, M * N * sizeof(fptype));
     }
-    int nLoops = 1000;
+    int nLoops = 10;
     auto doWork = [M,N,K,nLoops](fptype * a, fptype * b, fptype * c) {
         for (int i = 0; i < nLoops; ++i) {
                 cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,

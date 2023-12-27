@@ -260,9 +260,11 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
                 bBuffer[i + bScratch.leadingDimension * j] = B[i + LDB * j].toFloat();
             }
         }
+        /*
         leftInput.insert(make_tuple(aNumRows, aNumCols));
         rightInput.insert(make_tuple(K, N));
         output.insert(make_tuple(M, N));
+         */
         cblas_sgemm(ORDER, TRANSA, TRANSB, M, N, K,
                     ALPHA.toFloat(), aBuffer, aScratch.leadingDimension,
                     bBuffer, bScratch.leadingDimension,
@@ -276,15 +278,13 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
         returnScratch(bScratch);
         returnScratch(cScratch);
     } else {
-        leftInput.insert(make_tuple(M, K));
-        rightInput.insert(make_tuple(K, N));
-        output.insert(make_tuple(M, N));
         static Matvec * matvec = nullptr;
         int numThreads = 8;
         if (!matvec) {
             matvec = new Matvec(numThreads);
         }
         matvec->run(M, N, K, TRANSA, A, LDA, B, C);
+        /*
         leftInput.insert(make_tuple(M, K));
         rightInput.insert(make_tuple(K, N));
         output.insert(make_tuple(M, N));
@@ -306,5 +306,6 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
                 cout << get<0>(a) << " x " << get<1>(a) << "\n";
             }
         }
+         */
     }
 }
