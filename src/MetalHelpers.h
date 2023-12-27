@@ -25,17 +25,23 @@ namespace Metal {
     class MetalBuffer {
         MTL::Buffer * buffer = nullptr;
         void * ptr = nullptr;
+        size_t size = 0;
 
     public:
         MTL::Buffer * getMetalBuffer(void * ptr, size_t size) {
             if (!buffer) {
                 buffer = Metal::newBuffer(ptr, size);
                 this->ptr = ptr;
-            } else if (ptr != this->ptr) {
+            } else if (ptr != this->ptr || size != this->size) {
+                if (ptr != this->ptr) {
+                    cout << "Warning, pointer for metal buffer changed" << endl;
+                } else {
+                    cout << "Warning, size for metal buffer changed" << endl;
+                }
                 Metal::releaseBuffer(buffer);
                 buffer = Metal::newBuffer(ptr, size);
                 this->ptr = ptr;
-                cout << "Warning, pointer for metal buffer changed" << endl;
+                this->size = size;
             }
             return buffer;
         }

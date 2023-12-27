@@ -9,6 +9,7 @@
 #include<functional>
 #include<iomanip>
 #include<iostream>
+#include<memory>
 
 #include<Common.h>
 #include<Scratch.h>
@@ -22,19 +23,19 @@ void allocateScratch(size_t &totalAlloc, void ** p, int alignment, size_t size);
 template<typename T>
 class TransformerBlockScratch {
     int freeIo = 0;
-    Scratch<T> ioPtr[2];
-    Scratch<T> inputCopyBuffer;
-    Scratch<T> wQout;
-    vector<Scratch<T>> wKout;
-    vector<Scratch<T>> wVout;
-    Scratch<T> wOout;
-    Scratch<T> wOoutCopy;
-    Scratch<T> qkOut;
-    Scratch<T> vqkOut;
-    Scratch<T> w1Out;
-    Scratch<T> w2Out;
-    Scratch<T> w3Out;
-    Scratch<T> out;
+    unique_ptr<Scratch<T>> ioPtr[2];
+    unique_ptr<Scratch<T>> inputCopyBuffer;
+    unique_ptr<Scratch<T>> wQout;
+    vector<unique_ptr<Scratch<T>>> wKout;
+    vector<unique_ptr<Scratch<T>>> wVout;
+    unique_ptr<Scratch<T>> wOout;
+    unique_ptr<Scratch<T>> wOoutCopy;
+    unique_ptr<Scratch<T>> qkOut;
+    unique_ptr<Scratch<T>> vqkOut;
+    unique_ptr<Scratch<T>> w1Out;
+    unique_ptr<Scratch<T>> w2Out;
+    unique_ptr<Scratch<T>> w3Out;
+    unique_ptr<Scratch<T>> out;
 
 public:
     TransformerBlockScratch(int maxSequenceLength,
@@ -53,85 +54,85 @@ public:
         size_t totalAlloc = 0;
         using namespace std::placeholders;
         auto alignedAlloc = bind(allocateScratch<T>, ref(totalAlloc), _1, _2, _3);
-        ioPtr[0] = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
-        ioPtr[1] = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
-        inputCopyBuffer = Scratch<T>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
+        ioPtr[0] = make_unique<Scratch<T>>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
+        ioPtr[1] = make_unique<Scratch<T>>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
+        inputCopyBuffer = make_unique<Scratch<T>>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
 
         //TODO The heads within each matrix aren't aligned.  Does it even matter?  Some experimentation is needed.
-        wQout = Scratch<T>(alignedAlloc, 64, qLeadingDim, maxSequenceLength);
+        wQout = make_unique<Scratch<T>>(alignedAlloc, 64, qLeadingDim, maxSequenceLength);
         for(int i = 0; i < numLayers; ++i) {
-            wKout.push_back(Scratch<T>(alignedAlloc, 64, kLeadingDim, cacheSize + maxSequenceLength));
-            wVout.push_back(Scratch<T>(alignedAlloc, 64, vLeadingDim, cacheSize + maxSequenceLength));
+            wKout.push_back(make_unique<Scratch<T>>(alignedAlloc, 64, kLeadingDim, cacheSize + maxSequenceLength));
+            wVout.push_back(make_unique<Scratch<T>>(alignedAlloc, 64, vLeadingDim, cacheSize + maxSequenceLength));
         }
-        wOout = Scratch<T>(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
-        wOoutCopy = Scratch<T>(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
+        wOout = make_unique<Scratch<T>>(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
+        wOoutCopy = make_unique<Scratch<T>>(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
 
         int qkRows = numHeads * (cacheSize + maxSequenceLength);
         int qkLeadingDim = findAlignment(qkRows, 64);
-        qkOut = Scratch<T>(alignedAlloc, 64, qkLeadingDim, maxSequenceLength);
-        vqkOut = Scratch<T>(alignedAlloc, 64, vLeadingDim , maxSequenceLength);
+        qkOut = make_unique<Scratch<T>>(alignedAlloc, 64, qkLeadingDim, maxSequenceLength);
+        vqkOut = make_unique<Scratch<T>>(alignedAlloc, 64, vLeadingDim , maxSequenceLength);
 
-        w1Out = Scratch<T>(alignedAlloc, 64, w1LeadingDim, maxSequenceLength);
-        w2Out = Scratch<T>(alignedAlloc, 64, w2LeadingDim, maxSequenceLength);
-        w3Out = Scratch<T>(alignedAlloc, 64, w3LeadingDim, maxSequenceLength);
+        w1Out = make_unique<Scratch<T>>(alignedAlloc, 64, w1LeadingDim, maxSequenceLength);
+        w2Out = make_unique<Scratch<T>>(alignedAlloc, 64, w2LeadingDim, maxSequenceLength);
+        w3Out = make_unique<Scratch<T>>(alignedAlloc, 64, w3LeadingDim, maxSequenceLength);
 
         int outLeadingDim = findAlignment(vocabularySize, 64);
-        out = Scratch<T>(alignedAlloc, 64, outLeadingDim, 1);
+        out = make_unique<Scratch<T>>(alignedAlloc, 64, outLeadingDim, 1);
         cout << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
     }
 
-    Scratch<T> takeFreeIoPtr() {
-        Scratch<T> tmp = ioPtr[freeIo];
+    Scratch<T> * takeFreeIoPtr() {
+        Scratch<T> * tmp = ioPtr[freeIo].get();
         freeIo = (freeIo + 1) % 2;
         return tmp;
     }
 
-    Scratch<T> getInputCopyBuffer() {
-        return inputCopyBuffer;
+    Scratch<T> * getInputCopyBuffer() {
+        return inputCopyBuffer.get();
     }
 
-    Scratch<T> getWQout() {
-        return wQout;
+    Scratch<T> * getWQout() {
+        return wQout.get();
     }
 
-    Scratch<T> getWKout(int layerIdx) {
-        return wKout[layerIdx];
+    Scratch<T> * getWKout(int layerIdx) {
+        return wKout[layerIdx].get();
     }
 
-    Scratch<T> getWVout(int layerIdx) {
-        return wVout[layerIdx];
+    Scratch<T> * getWVout(int layerIdx) {
+        return wVout[layerIdx].get();
     }
 
-    Scratch<T> getQKout() {
-        return qkOut;
+    Scratch<T> * getQKout() {
+        return qkOut.get();
     }
 
-    Scratch<T> getVQKout() {
-        return vqkOut;
+    Scratch<T> * getVQKout() {
+        return vqkOut.get();
     }
 
-    Scratch<T> getWOout() {
-        return wOout;
+    Scratch<T> * getWOout() {
+        return wOout.get();
     }
 
-    Scratch<T> getWOoutCopy() {
-        return wOoutCopy;
+    Scratch<T> * getWOoutCopy() {
+        return wOoutCopy.get();
     }
 
-    Scratch<T> getW1Out() {
-        return w1Out;
+    Scratch<T> * getW1Out() {
+        return w1Out.get();
     }
 
-    Scratch<T> getW2Out() {
-        return w2Out;
+    Scratch<T> * getW2Out() {
+        return w2Out.get();
     }
 
-    Scratch<T> getW3Out() {
-        return w3Out;
+    Scratch<T> * getW3Out() {
+        return w3Out.get();
     }
 
-    Scratch<T> getOut() {
-        return out;
+    Scratch<T> * getOut() {
+        return out.get();
     }
 };
 

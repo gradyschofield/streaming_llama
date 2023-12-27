@@ -21,10 +21,10 @@ using namespace std;
 
 template<typename T>
 class NonTransformerWeights {
-    Weights<T> tokenEmbeddings;
-    Weights<T> ropeFreqs;
-    Weights<T> outputNormalizers;
-    Weights<T> outputWeights;
+    unique_ptr<Weights<T>> tokenEmbeddings;
+    unique_ptr<Weights<T>> ropeFreqs;
+    unique_ptr<Weights<T>> outputNormalizers;
+    unique_ptr<Weights<T>> outputWeights;
     off_t mapOffset;
     size_t mapLength;
     void * mapAddress = nullptr;
@@ -52,10 +52,10 @@ public:
             string const & tensorName = p.first;
             tensorInfoMap.emplace(tensorName, p.second);
         }
-        tokenEmbeddings = Weights<T>(mapOffset, tensorInfoMap.at("tok_embeddings.weight"));
-        ropeFreqs = Weights<T>(mapOffset, tensorInfoMap.at("rope.freqs"));
-        outputNormalizers = Weights<T>(mapOffset, tensorInfoMap.at("norm.weight"));
-        outputWeights = Weights<T>(mapOffset, tensorInfoMap.at("output.weight"));
+        tokenEmbeddings = make_unique<Weights<T>>(mapOffset, tensorInfoMap.at("tok_embeddings.weight"));
+        ropeFreqs = make_unique<Weights<T>>(mapOffset, tensorInfoMap.at("rope.freqs"));
+        outputNormalizers = make_unique<Weights<T>>(mapOffset, tensorInfoMap.at("norm.weight"));
+        outputWeights = make_unique<Weights<T>>(mapOffset, tensorInfoMap.at("output.weight"));
     }
 
     ~NonTransformerWeights() {
@@ -66,69 +66,57 @@ public:
     }
 
     T * getRopeFreqPtr() {
-        return ropeFreqs.getPtr(mapAddress);
+        return ropeFreqs->getPtr(mapAddress);
     }
 
     int getVocabularySize() const {
-        return tokenEmbeddings.getNumColumns();
+        return tokenEmbeddings->getNumColumns();
     }
 
     void getTokenEmbedding(vector<int> const & tokens, T * out) {
-        T const * ptr = tokenEmbeddings.getPtr(mapAddress);
+        T const * ptr = tokenEmbeddings->getPtr(mapAddress);
         int i = 0;
         for (int tok : tokens) {
-            memcpy(&out[i* tokenEmbeddings.getLeadingDimension()],
-                   &ptr[tok * tokenEmbeddings.getLeadingDimension()],
-                   tokenEmbeddings.getNumRows() * sizeof(T));
+            memcpy(&out[i* tokenEmbeddings->getLeadingDimension()],
+                   &ptr[tok * tokenEmbeddings->getLeadingDimension()],
+                   tokenEmbeddings->getNumRows() * sizeof(T));
             ++i;
         }
     }
 
-    Weights<T> const & getTokenEmbeddings() {
-        return tokenEmbeddings;
+    Weights<T> const * getTokenEmbeddings() {
+        return tokenEmbeddings.get();
     }
 
-    Weights<T> const & getRopeFreqs() {
-        return ropeFreqs;
-    }
-
-    Weights<T> const & getOutputNormalizers() {
-        return outputNormalizers;
-    }
-
-    Weights<T> const & getOutputWeights() {
-        return outputWeights;
-    }
-
-    void applyOutputLayer(Scratch<T> in, Scratch<T> out, int seqlen, float normEps) {
-        LayerNormalization<T>::exec(outputNormalizers.getPtr(mapAddress),
-                                       in.getPtr(),
-                                       outputWeights.getNumColumns(),
-                                       in.getLeadingDimension(),
+    void applyOutputLayer(Scratch<T> * in, Scratch<T> * out, int seqlen, float normEps) {
+        LayerNormalization<T>::exec(outputNormalizers->getPtr(mapAddress),
+                                       in->getPtr(),
+                                       outputWeights->getNumColumns(),
+                                       in->getLeadingDimension(),
                                        seqlen,
                                        normEps);
         if (checker) {
-            checker->submitResult(createDataAccessor(in.getPtr(),
-                                                     {outputWeights.getNumColumns(),
+            checker->submitResult(createDataAccessor(in->getPtr(),
+                                                     {outputWeights->getNumColumns(),
                                                       seqlen},
-                                                     in.getLeadingDimension()));
+                                                     in->getLeadingDimension()));
         }
 
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                               outputWeights.getNumRows(), seqlen, outputWeights.getNumColumns(),
+                               outputWeights->getNumRows(), seqlen, outputWeights->getNumColumns(),
                                1.0,
-                               outputWeights.getPtr(mapAddress),
-                               outputWeights.getLeadingDimension(),
-                               in.getPtr(),
-                               in.getLeadingDimension(),
+                               outputWeights->getPtr(mapAddress),
+                               outputWeights->getLeadingDimension(),
+                               in->getPtr(),
+                               in->getLeadingDimension(),
                                0.0,
-                               out.getPtr(),
-                               out.getLeadingDimension());
+                               out->getPtr(),
+                               out->getLeadingDimension());
         if(checker) {
-            checker->submitResult(createDataAccessor(out.getPtr(),
-                                                     {outputWeights.getNumRows(),
+            checker->submitResult(createDataAccessor(out->getPtr(),
+                                                     {outputWeights->getNumRows(),
                                                       seqlen},
-                                                     out.getLeadingDimension()));
+                                                     out->getLeadingDimension()));
         }
     }
 };

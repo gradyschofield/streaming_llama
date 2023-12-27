@@ -13,7 +13,7 @@ class Scratch {
     int leadingDimension;
     int numColumns;
     size_t size;
-    shared_ptr<Metal::MetalBuffer> metalBuffer;
+    unique_ptr<Metal::MetalBuffer> metalBuffer;
 
 public:
     Scratch(){
@@ -24,7 +24,7 @@ public:
             : leadingDimension(leadingDimension),
               numColumns(numColumns),
               size(leadingDimension * numColumns * sizeof(T)),
-              metalBuffer(make_shared<Metal::MetalBuffer>())
+              metalBuffer(make_unique<Metal::MetalBuffer>())
     {
         alignedAlloc((void**)&ptr, alignmentBytes, size);
         getMetalBuffer(ptr);

@@ -84,15 +84,15 @@ public:
 
     vector<float> evaluate(vector<int> const & tokens) override {
         int seqlen = tokens.size();
-        Scratch<T> out = transformerBlockScratch->takeFreeIoPtr();
+        Scratch<T> * out = transformerBlockScratch->takeFreeIoPtr();
         timings.start("Get token embeddings");
-        nonTransformerWeights->getTokenEmbedding(tokens, out.getPtr());
+        nonTransformerWeights->getTokenEmbedding(tokens, out->getPtr());
         timings.finish("Get token embeddings");
         if(checker) {
-            checker->submitResult(createDataAccessor(out.getPtr(),
-                                                     {nonTransformerWeights->getTokenEmbeddings().getNumRows(),
+            checker->submitResult(createDataAccessor(out->getPtr(),
+                                                     {nonTransformerWeights->getTokenEmbeddings()->getNumRows(),
                                                       seqlen},
-                                                     out.getLeadingDimension()));
+                                                     out->getLeadingDimension()));
         }
         for(auto & transformerBlock : transformerBlocks) {
             transformerBlock->mmap();
@@ -103,11 +103,11 @@ public:
             transformerBlock->munmap();
         }
         vector<float> ret(nonTransformerWeights->getVocabularySize());
-        Scratch<T> in = transformerBlockScratch->takeFreeIoPtr();
+        Scratch<T> * in = transformerBlockScratch->takeFreeIoPtr();
         timings.start("Compute output layer");
-        memcpy(in.getPtr(),
-               &out.getPtr()[out.getLeadingDimension() * (seqlen-1)],
-               sizeof(T) * out.getLeadingDimension());
+        memcpy(in->getPtr(),
+               &out->getPtr()[out->getLeadingDimension() * (seqlen-1)],
+               sizeof(T) * out->getLeadingDimension());
         nonTransformerWeights->applyOutputLayer(in,
                                                 transformerBlockScratch->getOut(),
                                                 1,
@@ -117,7 +117,7 @@ public:
         if(checker) {
             checker->finish();
         }
-        T * outPtr = transformerBlockScratch->getOut().getPtr();
+        T * outPtr = transformerBlockScratch->getOut()->getPtr();
         for(int i = 0; i < nonTransformerWeights->getVocabularySize(); ++i) {
             ret[i] = outPtr[i];
         }
