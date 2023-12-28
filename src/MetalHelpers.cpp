@@ -12,23 +12,46 @@
 
 namespace fs = std::filesystem;
 
-static MTL::Device * device = nullptr;
+static MTL::Device * __device = nullptr;
 static MTL::CaptureManager * captureManager = nullptr;
 static MTL::CaptureDescriptor * captureDescriptor = nullptr;
 
 static unordered_map<void const *, MTL::Buffer*> pointerToMetalBuffer;
 static unordered_map<MTL::Buffer *, void *> metalBufferToPointer;
+static unordered_map<int, MTL::CommandQueue*> indexedCommandQueues;
+
+
+struct SingleFunctionLibrary {
+    MTL::Library * library;
+    unique_ptr<Metal::Function> function;
+
+    SingleFunctionLibrary(MTL::Library * library, unique_ptr<Metal::Function> && function)
+        : library(library), function(std::move(function))
+    {
+    }
+    SingleFunctionLibrary(SingleFunctionLibrary const &) = delete;
+    SingleFunctionLibrary & operator=(SingleFunctionLibrary const &) = delete;
+    SingleFunctionLibrary(SingleFunctionLibrary &&) = default;
+    SingleFunctionLibrary & operator=(SingleFunctionLibrary &&) = default;
+
+    ~SingleFunctionLibrary() {
+        function.reset();
+        library->release();
+    }
+};
+
+static unordered_map<string, unique_ptr<SingleFunctionLibrary>> singleFunctionLibraries;
 
 namespace Metal {
     MTL::Device * getDevice() {
-        if (!device) {
-            device = MTLCreateSystemDefaultDevice();
+        if (!__device) {
+            __device = MTLCreateSystemDefaultDevice();
         }
-        return device;
+        return __device;
     }
 
     MTL::Buffer * newBuffer(void * p, long len) {
-        MTL::Buffer * ret = device->newBuffer(p, len, MTL::StorageModeShared);
+        MTL::Buffer * ret = getDevice()->newBuffer(p, len, MTL::StorageModeShared);
         pointerToMetalBuffer.emplace(p, ret);
         metalBufferToPointer.emplace(ret, p);
         return ret;
@@ -103,9 +126,10 @@ namespace Metal {
     MTL::Library * newLibrary(string const & src) {
         NS::String * shaderStr = NS::String::string(src.c_str(), NS::ASCIIStringEncoding);
         NS::Error * error = nullptr;
-        MTL::Library * library = device->newLibrary(shaderStr, nullptr, & error);
+        MTL::Library * library = getDevice()->newLibrary(shaderStr, nullptr, & error);
         if (error) {
             cout << "newLibrary error: " << error->localizedDescription()->utf8String() << endl;
+            return nullptr;
         }
         return library;
     }
@@ -122,5 +146,25 @@ namespace Metal {
             throw 1;
         }
         return Function(function, computePipelineState);
+    }
+
+    Function * getFunction(string const & src, string name) {
+        if (singleFunctionLibraries.contains(name)) {
+            return singleFunctionLibraries.at(name)->function.get();
+        }
+        MTL::Library * library = newLibrary(src);
+        unique_ptr<Function> fptr = make_unique<Function>(getFunction(library, name));
+        singleFunctionLibraries.emplace(name, make_unique<SingleFunctionLibrary>(library, std::move(fptr)));
+        return singleFunctionLibraries.at(name)->function.get();
+    }
+
+    MTL::CommandBuffer * getCommandBuffer(int idx) {
+        auto iter = indexedCommandQueues.find(idx);
+        if (iter != end(indexedCommandQueues)) {
+            return iter->second->commandBuffer();
+        }
+        MTL::CommandQueue * commandQueue = getDevice()->newCommandQueue();
+        indexedCommandQueues.emplace(idx, commandQueue);
+        return commandQueue->commandBuffer();
     }
 }

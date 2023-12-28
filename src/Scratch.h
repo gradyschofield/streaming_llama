@@ -27,14 +27,14 @@ public:
               metalBuffer(make_unique<Metal::MetalBuffer>())
     {
         alignedAlloc((void**)&ptr, alignmentBytes, size);
-        getMetalBuffer(ptr);
+        metalBuffer->getMetalBuffer(ptr, size);
     }
 
     T * getPtr() {
         return ptr;
     }
 
-    MTL::Buffer * getMetalBuffer(void * ptr) {
+    MTL::Buffer * getMetalBuffer() {
         return metalBuffer->getMetalBuffer(ptr, size);
     }
 

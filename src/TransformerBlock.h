@@ -115,12 +115,21 @@ public:
         memcpy(inputCopy->getPtr(), inPtr, seqlen * in->getLeadingDimension() * sizeof(T));
 
         //Layer normalization
-        LayerNormalization<T>::exec(attentionNormWeights->getPtr(mapAddress),
-                                       inputCopy->getPtr(),
+#if 0
+        LayerNormalization<T>::exec(attentionNormWeights->getMetalBuffer(mapAddress),
+                                       inputCopy->getMetalBuffer(),
                                        queryWeights->getNumColumns(),
                                        inputCopy->getLeadingDimension(),
                                        seqlen,
                                        normEps);
+#else
+        LayerNormalization<T>::exec(attentionNormWeights->getPtr(mapAddress),
+                                    inputCopy->getPtr(),
+                                    queryWeights->getNumColumns(),
+                                    inputCopy->getLeadingDimension(),
+                                    seqlen,
+                                    normEps);
+#endif
         timings.finish("Transformer input layer norm");
         if(checker) {
             checker->submitResult(createDataAccessor(inputCopy->getPtr(),

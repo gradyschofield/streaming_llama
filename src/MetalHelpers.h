@@ -6,6 +6,7 @@
 #define STREAMING_LLAMA_METALHELPERS_H
 
 #include<Metal.hpp>
+#include<Bf16.h>
 
 #include<iostream>
 #include<string>
@@ -96,6 +97,7 @@ namespace Metal {
     };
 
     Function getFunction(MTL::Library * library, string name);
+    Function * getFunction(string const & src, string name);
 
     template<typename T>
     inline void __encode_metal_param2(MTL::ComputeCommandEncoder * commandEncoder, T arg, int idx) {
@@ -105,6 +107,12 @@ namespace Metal {
     template<>
     inline void __encode_metal_param2(MTL::ComputeCommandEncoder * commandEncoder, MTL::Buffer * arg, int idx) {
         commandEncoder->setBuffer(arg, 0, idx);
+    }
+
+    template<>
+    inline void __encode_metal_param2(MTL::ComputeCommandEncoder * commandEncoder, Bf16 * arg, int idx) {
+        uint16_t x = arg->getInt();
+        commandEncoder->setBytes(&x, 2, idx);
     }
 
     inline void __encode_metal_param(MTL::ComputeCommandEncoder *, int) {}
@@ -148,6 +156,20 @@ namespace Metal {
               Args... args) {
         callNonblock(commandBuffer, function, ntx, nty, ntz, ngx, ngy, ngz, args...);
         commandBuffer->waitUntilCompleted();
+    }
+
+    MTL::CommandBuffer * getCommandBuffer(int idx);
+
+    template<typename ... Args>
+    void callAndWait(int commandBufferIdx,
+                     Function const & function,
+                     int ntx, int nty, int ntz,
+                     int ngx, int ngy, int ngz,
+                     Args... args) {
+        MTL::CommandBuffer * commandBuffer = getCommandBuffer(commandBufferIdx);
+        callNonblock(commandBuffer, function, ntx, nty, ntz, ngx, ngy, ngz, args...);
+        commandBuffer->waitUntilCompleted();
+        commandBuffer->release();
     }
 }
 

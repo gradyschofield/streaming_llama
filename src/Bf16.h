@@ -23,6 +23,7 @@ public:
     void operator*=(float t);
     Bf16 operator-();
     operator float();
+    uint16_t getInt() const;
 };
 
 Bf16 operator*(int i, Bf16 const & t);

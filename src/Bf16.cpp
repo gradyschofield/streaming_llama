@@ -74,3 +74,6 @@ Bf16 operator*(int i, Bf16 const & t) {
 }
 
 
+uint16_t Bf16::getInt() const {
+    return x;
+}
