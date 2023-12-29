@@ -33,6 +33,7 @@ namespace Metal {
             if (!buffer) {
                 buffer = Metal::newBuffer(ptr, size);
                 this->ptr = ptr;
+                this->size = size;
             } else if (ptr != this->ptr || size != this->size) {
                 if (ptr != this->ptr) {
                     cout << "Warning, pointer for metal buffer changed" << endl;
