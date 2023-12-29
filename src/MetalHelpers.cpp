@@ -52,18 +52,12 @@ namespace Metal {
 
     MTL::Buffer * newBuffer(void * p, long len) {
         MTL::Buffer * ret = getDevice()->newBuffer(p, len, MTL::StorageModeShared);
-        pointerToMetalBuffer.emplace(p, ret);
-        metalBufferToPointer.emplace(ret, p);
         return ret;
     }
 
-    void releaseBuffer(MTL::Buffer * buffer) {
-        if (buffer) {
-            void *p = mapAt(metalBufferToPointer, buffer);
-            pointerToMetalBuffer.erase(p);
-            metalBufferToPointer.erase(buffer);
-            buffer->release();
-        }
+    MTL::Buffer * newBuffer(long len) {
+        MTL::Buffer * ret = getDevice()->newBuffer(len, MTL::StorageModeShared);
+        return ret;
     }
 
     MTL::Buffer * getBuffer(void const * p) {

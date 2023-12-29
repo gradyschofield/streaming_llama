@@ -94,6 +94,7 @@ public:
                                                       seqlen},
                                                      out->getLeadingDimension()));
         }
+        int iter = 0;
         for(auto & transformerBlock : transformerBlocks) {
             transformerBlock->mmap();
             out = transformerBlock->evaluate(out,
@@ -101,6 +102,8 @@ public:
                                              transformerBlockScratch,
                                              timings);
             transformerBlock->munmap();
+            ++iter;
+            cout << "iter: " << iter << endl;
         }
         vector<float> ret(nonTransformerWeights->getVocabularySize());
         Scratch<T> * in = transformerBlockScratch->takeFreeIoPtr();

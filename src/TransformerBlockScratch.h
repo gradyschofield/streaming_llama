@@ -18,9 +18,6 @@ using namespace Common;
 using namespace std;
 
 template<typename T>
-void allocateScratch(size_t &totalAlloc, void ** p, int alignment, size_t size);
-
-template<typename T>
 class TransformerBlockScratch {
     int freeIo = 0;
     unique_ptr<Scratch<T>> ioPtr[2];
@@ -52,32 +49,30 @@ public:
                             int vocabularySize,
                             int numLayers) {
         size_t totalAlloc = 0;
-        using namespace std::placeholders;
-        auto alignedAlloc = bind(allocateScratch<T>, ref(totalAlloc), _1, _2, _3);
-        ioPtr[0] = make_unique<Scratch<T>>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
-        ioPtr[1] = make_unique<Scratch<T>>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
-        inputCopyBuffer = make_unique<Scratch<T>>(alignedAlloc, 64, embeddingLeadingDim, maxSequenceLength);
+        ioPtr[0] = make_unique<Scratch<T>>(embeddingLeadingDim, maxSequenceLength);
+        ioPtr[1] = make_unique<Scratch<T>>(embeddingLeadingDim, maxSequenceLength);
+        inputCopyBuffer = make_unique<Scratch<T>>(embeddingLeadingDim, maxSequenceLength);
 
         //TODO The heads within each matrix aren't aligned.  Does it even matter?  Some experimentation is needed.
-        wQout = make_unique<Scratch<T>>(alignedAlloc, 64, qLeadingDim, maxSequenceLength);
+        wQout = make_unique<Scratch<T>>(qLeadingDim, maxSequenceLength);
         for(int i = 0; i < numLayers; ++i) {
-            wKout.push_back(make_unique<Scratch<T>>(alignedAlloc, 64, kLeadingDim, cacheSize + maxSequenceLength));
-            wVout.push_back(make_unique<Scratch<T>>(alignedAlloc, 64, vLeadingDim, cacheSize + maxSequenceLength));
+            wKout.push_back(make_unique<Scratch<T>>(kLeadingDim, cacheSize + maxSequenceLength));
+            wVout.push_back(make_unique<Scratch<T>>(vLeadingDim, cacheSize + maxSequenceLength));
         }
-        wOout = make_unique<Scratch<T>>(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
-        wOoutCopy = make_unique<Scratch<T>>(alignedAlloc, 64, oLeadingDim, maxSequenceLength);
+        wOout = make_unique<Scratch<T>>(oLeadingDim, maxSequenceLength);
+        wOoutCopy = make_unique<Scratch<T>>(oLeadingDim, maxSequenceLength);
 
         int qkRows = numHeads * (cacheSize + maxSequenceLength);
         int qkLeadingDim = findAlignment(qkRows, 64);
-        qkOut = make_unique<Scratch<T>>(alignedAlloc, 64, qkLeadingDim, maxSequenceLength);
-        vqkOut = make_unique<Scratch<T>>(alignedAlloc, 64, vLeadingDim , maxSequenceLength);
+        qkOut = make_unique<Scratch<T>>(qkLeadingDim, maxSequenceLength);
+        vqkOut = make_unique<Scratch<T>>(vLeadingDim , maxSequenceLength);
 
-        w1Out = make_unique<Scratch<T>>(alignedAlloc, 64, w1LeadingDim, maxSequenceLength);
-        w2Out = make_unique<Scratch<T>>(alignedAlloc, 64, w2LeadingDim, maxSequenceLength);
-        w3Out = make_unique<Scratch<T>>(alignedAlloc, 64, w3LeadingDim, maxSequenceLength);
+        w1Out = make_unique<Scratch<T>>(w1LeadingDim, maxSequenceLength);
+        w2Out = make_unique<Scratch<T>>(w2LeadingDim, maxSequenceLength);
+        w3Out = make_unique<Scratch<T>>(w3LeadingDim, maxSequenceLength);
 
         int outLeadingDim = findAlignment(vocabularySize, 64);
-        out = make_unique<Scratch<T>>(alignedAlloc, 64, outLeadingDim, 1);
+        out = make_unique<Scratch<T>>(outLeadingDim, 1);
         cout << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
     }
 

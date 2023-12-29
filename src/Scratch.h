@@ -19,23 +19,20 @@ public:
     Scratch(){
     }
 
-    template<typename Allocator>
-    Scratch(Allocator && alignedAlloc, int alignmentBytes, int leadingDimension, int numColumns)
+    Scratch(int leadingDimension, int numColumns)
             : leadingDimension(leadingDimension),
               numColumns(numColumns),
               size(leadingDimension * numColumns * sizeof(T)),
-              metalBuffer(make_unique<Metal::MetalBuffer>())
+              metalBuffer(make_unique<Metal::MetalBuffer>(size))
     {
-        alignedAlloc((void**)&ptr, alignmentBytes, size);
-        metalBuffer->getMetalBuffer(ptr, size);
     }
 
     T * getPtr() {
-        return ptr;
+        return static_cast<T*>(metalBuffer->getMetalBuffer()->contents());
     }
 
     MTL::Buffer * getMetalBuffer() {
-        return metalBuffer->getMetalBuffer(ptr, size);
+        return metalBuffer->getMetalBuffer();
     }
 
     size_t getSize() {

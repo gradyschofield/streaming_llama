@@ -15,8 +15,8 @@ using namespace std;
 
 namespace Metal {
     MTL::Device * getDevice();
+    MTL::Buffer * newBuffer(long len);
     MTL::Buffer * newBuffer(void * p, long len);
-    void releaseBuffer(MTL::Buffer * buffer);
     MTL::Buffer * getBuffer(void const * p);
     MTL::Library * newLibrary(string const & src);
     void startCapture(string filename, bool eraseExisting = true);
@@ -25,31 +25,27 @@ namespace Metal {
 
     class MetalBuffer {
         MTL::Buffer * buffer = nullptr;
-        void * ptr = nullptr;
         size_t size = 0;
 
     public:
-        MTL::Buffer * getMetalBuffer(void * ptr, size_t size) {
-            if (!buffer) {
-                buffer = Metal::newBuffer(ptr, size);
-                this->ptr = ptr;
-                this->size = size;
-            } else if (ptr != this->ptr || size != this->size) {
-                if (ptr != this->ptr) {
-                    cout << "Warning, pointer for metal buffer changed" << endl;
-                } else {
-                    cout << "Warning, size for metal buffer changed" << endl;
-                }
-                Metal::releaseBuffer(buffer);
-                buffer = Metal::newBuffer(ptr, size);
-                this->ptr = ptr;
-                this->size = size;
-            }
+        MetalBuffer(size_t size) {
+            buffer = Metal::newBuffer(size);
+            this->size = size;
+        }
+
+        MetalBuffer(void * ptr, size_t size) {
+            buffer = Metal::newBuffer(ptr, size);
+            this->size = size;
+        }
+
+        MTL::Buffer * getMetalBuffer() {
             return buffer;
         }
 
         ~MetalBuffer() {
-            Metal::releaseBuffer(buffer);
+            if (buffer) {
+                buffer->release();
+            }
         }
     };
 

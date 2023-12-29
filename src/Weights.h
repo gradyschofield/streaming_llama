@@ -28,27 +28,25 @@ public:
     Weights(Weights const &)= delete;
     Weights(Weights &&) = default;
 
-    Weights(int64_t mapOffset, TensorFileInfo const & tfi)
+    Weights(void * mapAddress, int64_t mapOffset, TensorFileInfo const & tfi)
             :   offsetIntoBlock(tfi.offset - mapOffset),
                 numRows(tfi.numRows),
                 numColumns(tfi.numColumns),
                 leadingDimension(tfi.leadingDimension),
-                metalBuffer(make_unique<Metal::MetalBuffer>())
+                metalBuffer(make_unique<Metal::MetalBuffer>((uint8_t*)mapAddress + offsetIntoBlock, getSize()))
     {
     }
 
-    T * getPtr(void* base) {
-        T * ptr = (T*)((uint8_t*)base + offsetIntoBlock);
-        getMetalBuffer(ptr);
-        return ptr;
+    T * getPtr() {
+        return static_cast<T*>(metalBuffer->getMetalBuffer()->contents());
     }
 
-    MTL::Buffer * getMetalBuffer(void * ptr) {
-        return metalBuffer->getMetalBuffer(ptr, getSize());
+    MTL::Buffer * getMetalBuffer() {
+        return metalBuffer->getMetalBuffer();
     }
 
     size_t getSize() const {
-        return numRows * leadingDimension * sizeof(T);
+        return numColumns * leadingDimension * sizeof(T);
     }
 
     int getNumRows() const {

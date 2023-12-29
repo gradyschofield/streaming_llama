@@ -38,7 +38,6 @@ set(SRC
         src/Socket.cpp
         src/Timer.cpp
         src/Timer.h
-        src/TransformerBlockScratch.cpp
         src/TransformerBlockScratch.h
         src/TransformerBlock.h
         src/Weights.h

@@ -52,21 +52,19 @@ public:
             string const & tensorName = p.first;
             tensorInfoMap.emplace(tensorName, p.second);
         }
-        tokenEmbeddings = make_unique<Weights<T>>(mapOffset, tensorInfoMap.at("tok_embeddings.weight"));
-        ropeFreqs = make_unique<Weights<T>>(mapOffset, tensorInfoMap.at("rope.freqs"));
-        outputNormalizers = make_unique<Weights<T>>(mapOffset, tensorInfoMap.at("norm.weight"));
-        outputWeights = make_unique<Weights<T>>(mapOffset, tensorInfoMap.at("output.weight"));
+        tokenEmbeddings = make_unique<Weights<T>>(mapAddress, mapOffset, tensorInfoMap.at("tok_embeddings.weight"));
+        ropeFreqs = make_unique<Weights<T>>(mapAddress, mapOffset, tensorInfoMap.at("rope.freqs"));
+        outputNormalizers = make_unique<Weights<T>>(mapAddress, mapOffset, tensorInfoMap.at("norm.weight"));
+        outputWeights = make_unique<Weights<T>>(mapAddress, mapOffset, tensorInfoMap.at("output.weight"));
+        munmap(mapAddress, mapLength);
+        mapAddress = nullptr;
     }
 
     ~NonTransformerWeights() {
-        if (mapAddress) {
-            munmap(mapAddress, mapLength);
-            mapAddress = nullptr;
-        }
     }
 
     T * getRopeFreqPtr() {
-        return ropeFreqs->getPtr(mapAddress);
+        return ropeFreqs->getPtr();
     }
 
     int getVocabularySize() const {
@@ -74,7 +72,7 @@ public:
     }
 
     void getTokenEmbedding(vector<int> const & tokens, T * out) {
-        T const * ptr = tokenEmbeddings->getPtr(mapAddress);
+        T const * ptr = tokenEmbeddings->getPtr();
         int i = 0;
         for (int tok : tokens) {
             memcpy(&out[i* tokenEmbeddings->getLeadingDimension()],
@@ -89,7 +87,7 @@ public:
     }
 
     void applyOutputLayer(Scratch<T> * in, Scratch<T> * out, int seqlen, float normEps) {
-        LayerNormalization<T>::exec(outputNormalizers->getPtr(mapAddress),
+        LayerNormalization<T>::exec(outputNormalizers->getPtr(),
                                        in->getPtr(),
                                        outputWeights->getNumColumns(),
                                        in->getLeadingDimension(),
@@ -105,7 +103,7 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                outputWeights->getNumRows(), seqlen, outputWeights->getNumColumns(),
                                1.0,
-                               outputWeights->getPtr(mapAddress),
+                               outputWeights->getPtr(),
                                outputWeights->getLeadingDimension(),
                                in->getPtr(),
                                in->getLeadingDimension(),

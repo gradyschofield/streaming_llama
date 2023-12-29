@@ -71,15 +71,17 @@ public:
             string const & layerName = p.first;
             layerInfoMap.emplace(layerName.substr(prefixLen), p.second);
         }
-        queryWeights = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("attention.wq.weight"));
-        keyWeights = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("attention.wk.weight"));
-        valueWeights = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("attention.wv.weight"));
-        attentionNormWeights = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("attention_norm.weight"));
-        outputWeights = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("attention.wo.weight"));
-        ffnNormWeights = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("ffn_norm.weight"));
-        ffnWeights1 = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("feed_forward.w1.weight"));
-        ffnWeights2 = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("feed_forward.w2.weight"));
-        ffnWeights3 = make_unique<Weights<T>>(mapOffset, layerInfoMap.at("feed_forward.w3.weight"));
+        mmap();
+        queryWeights = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("attention.wq.weight"));
+        keyWeights = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("attention.wk.weight"));
+        valueWeights = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("attention.wv.weight"));
+        attentionNormWeights = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("attention_norm.weight"));
+        outputWeights = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("attention.wo.weight"));
+        ffnNormWeights = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("ffn_norm.weight"));
+        ffnWeights1 = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("feed_forward.w1.weight"));
+        ffnWeights2 = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("feed_forward.w2.weight"));
+        ffnWeights3 = make_unique<Weights<T>>(mapAddress, mapOffset, layerInfoMap.at("feed_forward.w3.weight"));
+        munmap();
     }
 
     ~TransformerBlock() {
@@ -95,10 +97,8 @@ public:
     }
 
     void munmap() {
-        if (unmapWeights) {
-            ::munmap(mapAddress, mapLength);
-            mapAddress = nullptr;
-        }
+        ::munmap(mapAddress, mapLength);
+        mapAddress = nullptr;
     }
 
 
@@ -123,7 +123,7 @@ public:
                                        seqlen,
                                        normEps);
 #else
-        LayerNormalization<T>::exec(attentionNormWeights->getPtr(mapAddress),
+        LayerNormalization<T>::exec(attentionNormWeights->getPtr(),
                                     inputCopy->getPtr(),
                                     queryWeights->getNumColumns(),
                                     inputCopy->getLeadingDimension(),
@@ -144,7 +144,7 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                queryWeights->getNumRows(), seqlen, queryWeights->getNumColumns(),
                                1.0,
-                               queryWeights->getPtr(mapAddress),
+                               queryWeights->getPtr(),
                                queryWeights->getLeadingDimension(),
                                inputCopy->getPtr(),
                                inputCopy->getLeadingDimension(),
@@ -159,7 +159,7 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                keyWeights->getNumRows(), seqlen, keyWeights->getNumColumns(),
                                1.0,
-                               keyWeights->getPtr(mapAddress),
+                               keyWeights->getPtr(),
                                keyWeights->getLeadingDimension(),
                                inputCopy->getPtr(),
                                inputCopy->getLeadingDimension(),
@@ -174,7 +174,7 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                valueWeights->getNumRows(), seqlen, valueWeights->getNumColumns(),
                                1.0,
-                               valueWeights->getPtr(mapAddress),
+                               valueWeights->getPtr(),
                                valueWeights->getLeadingDimension(),
                                inputCopy->getPtr(),
                                inputCopy->getLeadingDimension(),
@@ -334,7 +334,7 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                outputWeights->getNumRows(), seqlen, outputWeights->getNumColumns(),
                                1.0,
-                               outputWeights->getPtr(mapAddress),
+                               outputWeights->getPtr(),
                                outputWeights->getLeadingDimension(),
                                vqkOutPtr,
                                vqkOutLeadingDim,
@@ -358,7 +358,7 @@ public:
 
         //FFN layer normalizatoin
         timings.start("FFN layer normalization");
-        LayerNormalization<T>::exec(ffnNormWeights->getPtr(mapAddress),
+        LayerNormalization<T>::exec(ffnNormWeights->getPtr(),
                                        woOutPtr,
                                        outputWeights->getNumRows(),
                                        woOutLeadingDim,
@@ -371,7 +371,7 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                ffnWeights1->getNumRows(), seqlen, ffnWeights1->getNumColumns(),
                                1.0,
-                               ffnWeights1->getPtr(mapAddress),
+                               ffnWeights1->getPtr(),
                                ffnWeights1->getLeadingDimension(),
                                woOutPtr,
                                woOutLeadingDim,
@@ -385,7 +385,7 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                ffnWeights3->getNumRows(), seqlen, ffnWeights3->getNumColumns(),
                                1.0,
-                               ffnWeights3->getPtr(mapAddress),
+                               ffnWeights3->getPtr(),
                                ffnWeights3->getLeadingDimension(),
                                woOutPtr,
                                woOutLeadingDim,
@@ -409,7 +409,7 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                ffnWeights2->getNumRows(), seqlen, ffnWeights2->getNumColumns(),
                                1.0,
-                               ffnWeights2->getPtr(mapAddress),
+                               ffnWeights2->getPtr(),
                                ffnWeights2->getLeadingDimension(),
                                w1Out->getPtr(),
                                w1Out->getLeadingDimension(),
