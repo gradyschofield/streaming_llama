@@ -60,7 +60,7 @@ public:
                 }
                 float norm = 1.0 / sqrt(accum / numRows + static_cast<float>(normEps));
                 for (int i = threadPos; i < numRows; i+=32) {
-                    v[i] = static_cast<bfloat>(static_cast<float>(weights[i]) * norm);
+                    v[i] = static_cast<bfloat>(static_cast<float>(v[i]) * static_cast<float>(weights[i]) * norm);
                 }
             }
         )";

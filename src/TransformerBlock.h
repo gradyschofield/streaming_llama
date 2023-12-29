@@ -115,8 +115,8 @@ public:
         memcpy(inputCopy->getPtr(), inPtr, seqlen * in->getLeadingDimension() * sizeof(T));
 
         //Layer normalization
-#if 0
-        LayerNormalization<T>::exec(attentionNormWeights->getMetalBuffer(mapAddress),
+#if 1
+        LayerNormalization<T>::exec(attentionNormWeights->getMetalBuffer(),
                                        inputCopy->getMetalBuffer(),
                                        queryWeights->getNumColumns(),
                                        inputCopy->getLeadingDimension(),
