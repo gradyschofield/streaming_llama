@@ -103,13 +103,14 @@ public:
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                outputWeights->getNumRows(), seqlen, outputWeights->getNumColumns(),
                                1.0,
-                               outputWeights->getPtr(),
+                               outputWeights->getMetalBuffer(),
                                outputWeights->getLeadingDimension(),
-                               in->getPtr(),
+                               in->getMetalBuffer(),
                                in->getLeadingDimension(),
                                0.0,
-                               out->getPtr(),
+                               out->getMetalBuffer(),
                                out->getLeadingDimension());
+        Metal::waitUntilCompleted(0, reclaimMatvecBuffers);
         if(checker) {
             checker->submitResult(createDataAccessor(out->getPtr(),
                                                      {outputWeights->getNumRows(),

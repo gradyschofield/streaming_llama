@@ -243,7 +243,7 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
                             const int LDC) {
     int aNumRows = TRANSA == CblasTrans ? K : M;
     int aNumCols = TRANSA == CblasTrans ? M : K;
-    if (N > 1) {
+    if (N > 1 || TRANSA == CblasTrans) {
         ScratchBuffer aScratch = getScratch(aNumRows, aNumCols);
         ScratchBuffer bScratch = getScratch(K, N);
         ScratchBuffer cScratch = getScratch(M, N);
@@ -284,28 +284,131 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
             matvec = new Matvec(numThreads);
         }
         matvec->run(M, N, K, TRANSA, A, LDA, B, C);
-        /*
-        leftInput.insert(make_tuple(M, K));
-        rightInput.insert(make_tuple(K, N));
-        output.insert(make_tuple(M, N));
-        MetalHelpers::getBuffer(A);
-        MetalHelpers::getBuffer(B);
-        MetalHelpers::getBuffer(C);
-        ++numCalls;
-        if (numCalls % 10000 == 0) {
-            cout << "A inputs: \n";
-            for( auto a : leftInput) {
-                cout << get<0>(a) << " x " << get<1>(a) << "\n";
-            }
-            cout << "B inputs: \n";
-            for( auto a : rightInput) {
-                cout << get<0>(a) << " x " << get<1>(a) << "\n";
-            }
-            cout << "C outputs: \n";
-            for( auto a : output) {
-                cout << get<0>(a) << " x " << get<1>(a) << "\n";
-            }
-        }
-         */
     }
 }
+
+static multimap<pair<int, int>, MTL::Buffer * > freeMatvecTemporaryBuffers;
+static multimap<pair<int, int>, MTL::Buffer * > inUseMatvecTemporaryBuffers;
+static Metal::Function * matvecFunc = nullptr;
+static Metal::Function * reducerFunc = nullptr;
+
+static void initMatvec() {
+    static string matvecSrc = R"(
+            #include <metal_stdlib>
+            using namespace metal;
+
+            kernel void singleColumnMatvec(device const bfloat4 * mat [[buffer(0)]],
+                                        device const bfloat * vec [[buffer(1)]],
+                                        device float4 * result [[buffer(2)]],
+                                        constant int64_t & numRows [[buffer(3)]],
+                                        constant int64_t & numCols [[buffer(4)]],
+                                        uint2 threadPos [[thread_position_in_threadgroup]],
+                                        uint2 threadDim [[threads_per_threadgroup]],
+                                        uint2 groupPos [[threadgroup_position_in_grid]],
+                                        uint2 groupDim [[threadgroups_per_grid]] ) {
+                int64_t numRows_4 = numRows >> 2;
+                int64_t threadRowOffset = threadPos.x + groupPos.x * threadDim.x;
+                float4 t = 0;
+                for (uint j = 0; j < numCols; j+=groupDim.y) {
+                    t += static_cast<float4>(mat[threadRowOffset + (j+groupPos.y) * numRows_4] * vec[j+groupPos.y]);
+                }
+                result[threadRowOffset + groupPos.y * numRows_4] = t;
+            }
+        )";
+
+    static string reducerSrc = R"(
+            #include <metal_stdlib>
+            using namespace metal;
+
+            kernel void singleColumnMatvecReducer(
+                        device float4 * input [[buffer(0)]],
+                        device bfloat4 * result [[buffer(1)]],
+                        constant int64_t & numRows [[buffer(2)]],
+                        constant int64_t & numTemporaries [[buffer(3)]],
+                        constant int64_t & outputOffsetElements [[buffer(4)]],
+                        uint2 threadPos [[thread_position_in_threadgroup]],
+                        uint2 threadDim [[threads_per_threadgroup]],
+                        uint2 groupPos [[threadgroup_position_in_grid]],
+                        uint2 groupDim [[threadgroups_per_grid]] ) {
+                int64_t numRows4 = numRows >> 2;
+                int64_t threadRowOffset = threadPos.x + groupPos.x * threadDim.x;
+                float4 t = 0;
+                for (uint j = 0; j < numTemporaries; ++j) {
+                    t += input[threadRowOffset + j * numRows4];
+                }
+                result[(outputOffsetElements >> 2) + threadRowOffset] = static_cast<bfloat4>(t);
+            }
+        )";
+
+    matvecFunc = Metal::getFunction(matvecSrc, "singleColumnMatvec");
+    reducerFunc = Metal::getFunction(reducerSrc, "singleColumnMatvecReducer");
+}
+
+void matvec(MTL::Buffer * mat,
+            MTL::Buffer * in,
+            MTL::Buffer * out,
+            long numRows,
+            long numCols,
+            long outputOffsetElements) {
+
+    if (!matvecFunc) {
+        initMatvec();
+    }
+
+    long stripLength = 32;
+    long stripDimGroups = 8;
+    long stripsPerGroup = 1;
+
+    pair<int, int> tmpKey = make_pair(numRows, stripDimGroups);
+    auto iter = freeMatvecTemporaryBuffers.find(tmpKey);
+    MTL::Buffer * tmpBuffer = nullptr;
+    if (iter == end(freeMatvecTemporaryBuffers)) {
+        tmpBuffer = Metal::newBuffer(stripDimGroups * numRows * sizeof(float));
+    } else {
+        tmpBuffer = iter->second;
+        freeMatvecTemporaryBuffers.erase(iter);
+    }
+    inUseMatvecTemporaryBuffers.emplace(tmpKey, tmpBuffer);
+
+    MTL::CommandBuffer * commandBuffer = Metal::getCommandBuffer(0);
+    long rowGroups = numRows / (stripLength * 4);
+    Metal::queueCall(commandBuffer, *matvecFunc,
+                     stripLength, 1, 1,
+                     rowGroups, stripDimGroups, 1,
+                     mat, in, tmpBuffer,
+                     numRows, numCols);
+
+    Metal::queueCall(commandBuffer, *reducerFunc,
+                     stripLength, 1, 1,
+                     rowGroups, 1, 1,
+                     tmpBuffer, out,
+                     numRows, stripDimGroups, outputOffsetElements);
+
+    //Metal::waitUntilCompleted(0, reclaimMatvecBuffers);
+    /*
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+    commandBuffer->release();
+     */
+}
+
+void reclaimMatvecBuffers() {
+    for (auto iter : inUseMatvecTemporaryBuffers) {
+        freeMatvecTemporaryBuffers.emplace(iter.first, iter.second);
+    }
+    inUseMatvecTemporaryBuffers.clear();
+}
+
+/*
+template<typename T>
+void multiplyMatrices(const enum CBLAS_ORDER ORDER,
+                      const enum CBLAS_TRANSPOSE TRANSA,
+                      const enum CBLAS_TRANSPOSE TRANSB, const int M, const int N,
+                      const int K, const T ALPHA, MTL::Buffer * A, const int LDA,
+                      MTL::Buffer * B, const int LDB, const T BETA, MTL::Buffer * C,
+                      const int LDC) {
+    multiplyMatrices(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, A->contents(), LDA,
+                     B->contents(), LDB, BETA, C->contents(), LDC);
+}
+
+*/

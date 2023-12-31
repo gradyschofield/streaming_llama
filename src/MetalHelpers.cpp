@@ -19,6 +19,7 @@ static MTL::CaptureDescriptor * captureDescriptor = nullptr;
 static unordered_map<void const *, MTL::Buffer*> pointerToMetalBuffer;
 static unordered_map<MTL::Buffer *, void *> metalBufferToPointer;
 static unordered_map<int, MTL::CommandQueue*> indexedCommandQueues;
+static unordered_map<int, MTL::CommandBuffer*> indexedCommandBuffers;
 
 
 struct SingleFunctionLibrary {
@@ -153,12 +154,33 @@ namespace Metal {
     }
 
     MTL::CommandBuffer * getCommandBuffer(int idx) {
+        auto cbIter = indexedCommandBuffers.find(idx);
+        if (cbIter != end(indexedCommandBuffers)) {
+            return cbIter->second;
+        }
         auto iter = indexedCommandQueues.find(idx);
+        MTL::CommandBuffer * ret;
         if (iter != end(indexedCommandQueues)) {
-            return iter->second->commandBuffer();
+            ret = iter->second->commandBuffer();
+            indexedCommandBuffers.emplace(idx, ret);
+            return ret;
         }
         MTL::CommandQueue * commandQueue = getDevice()->newCommandQueue();
         indexedCommandQueues.emplace(idx, commandQueue);
-        return commandQueue->commandBuffer();
+        ret = commandQueue->commandBuffer();
+        indexedCommandBuffers.emplace(idx, ret);
+        return ret;
+    }
+
+    void waitUntilCompleted(int idx) {
+        auto cbIter = indexedCommandBuffers.find(idx);
+        if (cbIter == end(indexedCommandBuffers)) {
+            return;
+        }
+        MTL::CommandBuffer * commandBuffer = cbIter->second;
+        indexedCommandBuffers.erase(idx);
+        commandBuffer->commit();
+        commandBuffer->waitUntilCompleted();
+        commandBuffer->release();
     }
 }

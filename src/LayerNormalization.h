@@ -66,14 +66,13 @@ public:
         )";
         Metal::Function * function = Metal::getFunction(kernelSrc, "layerNormalization");
         Metal::callAndWait(0, *function,
-                           32, 1, 1,
-                           seqlen, 1, 1,
-                           src,
-                           weights,
-                           numRows,
-                           leadingDimension,
-                           normEps);
-        cout << "Finished layer norm" << endl;
+                         32, 1, 1,
+                         seqlen, 1, 1,
+                         src,
+                         weights,
+                         numRows,
+                         leadingDimension,
+                         normEps);
     }
 };
 

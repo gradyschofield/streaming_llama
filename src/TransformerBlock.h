@@ -142,46 +142,52 @@ public:
         T* wqOutPtr = transformerBlockScratch->getWQout()->getPtr();
         int wqOutLeadingDim = transformerBlockScratch->getWQout()->getLeadingDimension();
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                               queryWeights->getNumRows(), seqlen, queryWeights->getNumColumns(),
-                               1.0,
-                               queryWeights->getPtr(),
-                               queryWeights->getLeadingDimension(),
-                               inputCopy->getPtr(),
-                               inputCopy->getLeadingDimension(),
-                               0.0,
-                               wqOutPtr,
-                               wqOutLeadingDim);
+                            queryWeights->getNumRows(), seqlen, queryWeights->getNumColumns(),
+                            1.0,
+                            queryWeights->getMetalBuffer(),
+                            queryWeights->getLeadingDimension(),
+                            inputCopy->getMetalBuffer(),
+                            inputCopy->getLeadingDimension(),
+                            0.0,
+                            transformerBlockScratch->getWQout()->getMetalBuffer(),
+                            wqOutLeadingDim);
         timings.finish("Transformer Q*embedding matmul");
 
         timings.start("Transformer K*embedding matmul");
         T* wkOutPtr = transformerBlockScratch->getWKout(layerIdx)->getPtr();
         int wkOutLeadingDim = transformerBlockScratch->getWKout(layerIdx)->getLeadingDimension();
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                               keyWeights->getNumRows(), seqlen, keyWeights->getNumColumns(),
-                               1.0,
-                               keyWeights->getPtr(),
-                               keyWeights->getLeadingDimension(),
-                               inputCopy->getPtr(),
-                               inputCopy->getLeadingDimension(),
-                               0.0,
-                               &wkOutPtr[currentToken * wkOutLeadingDim],
-                               wkOutLeadingDim);
+                            keyWeights->getNumRows(), seqlen, keyWeights->getNumColumns(),
+                            1.0,
+                            keyWeights->getMetalBuffer(),
+                            keyWeights->getLeadingDimension(),
+                            inputCopy->getMetalBuffer(),
+                            inputCopy->getLeadingDimension(),
+                            0.0,
+                            transformerBlockScratch->getWKout(layerIdx)->getMetalBuffer(),
+                            currentToken * wkOutLeadingDim,
+                            wkOutLeadingDim);
         timings.finish("Transformer K*embedding matmul");
 
         timings.start("Transformer V*embedding matmul");
         T * wvOutPtr = transformerBlockScratch->getWVout(layerIdx)->getPtr();
         int wvOutLeadingDim = transformerBlockScratch->getWVout(layerIdx)->getLeadingDimension();
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                               valueWeights->getNumRows(), seqlen, valueWeights->getNumColumns(),
-                               1.0,
-                               valueWeights->getPtr(),
-                               valueWeights->getLeadingDimension(),
-                               inputCopy->getPtr(),
-                               inputCopy->getLeadingDimension(),
-                               0.0,
-                               &wvOutPtr[currentToken * wvOutLeadingDim],
-                               wvOutLeadingDim);
+                            valueWeights->getNumRows(), seqlen, valueWeights->getNumColumns(),
+                            1.0,
+                            valueWeights->getMetalBuffer(),
+                            valueWeights->getLeadingDimension(),
+                            inputCopy->getMetalBuffer(),
+                            inputCopy->getLeadingDimension(),
+                            0.0,
+                            transformerBlockScratch->getWVout(layerIdx)->getMetalBuffer(),
+                            currentToken * wvOutLeadingDim,
+                            wvOutLeadingDim);
         timings.finish("Transformer V*embedding matmul");
+
+        timings.start("Waiting on first 3 matmuls");
+        Metal::waitUntilCompleted(0, reclaimMatvecBuffers);
+        timings.finish("Waiting on first 3 matmuls");
 
         if(checker) {
             checker->submitResult(createDataAccessor(wqOutPtr,
@@ -332,15 +338,16 @@ public:
         T* woOutPtr = transformerBlockScratch->getWOout()->getPtr();
         int woOutLeadingDim = transformerBlockScratch->getWOout()->getLeadingDimension();
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                               outputWeights->getNumRows(), seqlen, outputWeights->getNumColumns(),
-                               1.0,
-                               outputWeights->getPtr(),
-                               outputWeights->getLeadingDimension(),
-                               vqkOutPtr,
-                               vqkOutLeadingDim,
-                               0.0,
-                               woOutPtr,
-                               woOutLeadingDim);
+                            outputWeights->getNumRows(), seqlen, outputWeights->getNumColumns(),
+                            1.0,
+                            outputWeights->getMetalBuffer(),
+                            outputWeights->getLeadingDimension(),
+                            vqkOut->getMetalBuffer(),
+                            vqkOutLeadingDim,
+                            0.0,
+                            transformerBlockScratch->getWOout()->getMetalBuffer(),
+                            woOutLeadingDim);
+        Metal::waitUntilCompleted(0, reclaimMatvecBuffers);
         timings.finish("Output weights * V*Q*K");
 
         timings.start("First residual connection");
@@ -369,30 +376,34 @@ public:
         timings.start("W1*out of FFN");
         Scratch<T> * w1Out = transformerBlockScratch->getW1Out();
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                               ffnWeights1->getNumRows(), seqlen, ffnWeights1->getNumColumns(),
-                               1.0,
-                               ffnWeights1->getPtr(),
-                               ffnWeights1->getLeadingDimension(),
-                               woOutPtr,
-                               woOutLeadingDim,
-                               0.0,
-                               w1Out->getPtr(),
-                               w1Out->getLeadingDimension());
+                            ffnWeights1->getNumRows(), seqlen, ffnWeights1->getNumColumns(),
+                            1.0,
+                            ffnWeights1->getMetalBuffer(),
+                            ffnWeights1->getLeadingDimension(),
+                            transformerBlockScratch->getWOout()->getMetalBuffer(),
+                            woOutLeadingDim,
+                            0.0,
+                            w1Out->getMetalBuffer(),
+                            w1Out->getLeadingDimension());
         timings.finish("W1*out of FFN");
 
         timings.start("W3*out of FFN");
         Scratch<T> * w3Out = transformerBlockScratch->getW3Out();
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                               ffnWeights3->getNumRows(), seqlen, ffnWeights3->getNumColumns(),
-                               1.0,
-                               ffnWeights3->getPtr(),
-                               ffnWeights3->getLeadingDimension(),
-                               woOutPtr,
-                               woOutLeadingDim,
-                               0.0,
-                               w3Out->getPtr(),
-                               w3Out->getLeadingDimension());
+                            ffnWeights3->getNumRows(), seqlen, ffnWeights3->getNumColumns(),
+                            1.0,
+                            ffnWeights3->getMetalBuffer(),
+                            ffnWeights3->getLeadingDimension(),
+                            transformerBlockScratch->getWOout()->getMetalBuffer(),
+                            woOutLeadingDim,
+                            0.0,
+                            w3Out->getMetalBuffer(),
+                            w3Out->getLeadingDimension());
         timings.finish("W3*out of FFN");
+
+        timings.start("Wait on first 2 layers of FFN");
+        Metal::waitUntilCompleted(0, reclaimMatvecBuffers);
+        timings.finish("Wait on first 2 layers of FFN");
 
         timings.start("silu activation of FFN");
         for(int j = 0; j < seqlen; ++j) {
@@ -407,15 +418,16 @@ public:
         timings.start("W2 * activation of FFN");
         Scratch<T> * w2Out = transformerBlockScratch->getW2Out();
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                               ffnWeights2->getNumRows(), seqlen, ffnWeights2->getNumColumns(),
-                               1.0,
-                               ffnWeights2->getPtr(),
-                               ffnWeights2->getLeadingDimension(),
-                               w1Out->getPtr(),
-                               w1Out->getLeadingDimension(),
-                               0.0,
-                               w2Out->getPtr(),
-                               w2Out->getLeadingDimension());
+                            ffnWeights2->getNumRows(), seqlen, ffnWeights2->getNumColumns(),
+                            1.0,
+                            ffnWeights2->getMetalBuffer(),
+                            ffnWeights2->getLeadingDimension(),
+                            w1Out->getMetalBuffer(),
+                            w1Out->getLeadingDimension(),
+                            0.0,
+                            w2Out->getMetalBuffer(),
+                            w2Out->getLeadingDimension());
+        Metal::waitUntilCompleted(0, reclaimMatvecBuffers);
         timings.finish("W2 * activation of FFN");
 
         timings.start("Final residual connection");

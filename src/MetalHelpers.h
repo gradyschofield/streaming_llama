@@ -156,6 +156,12 @@ namespace Metal {
     }
 
     MTL::CommandBuffer * getCommandBuffer(int idx);
+    void waitUntilCompleted(int idx);
+    template<typename Func>
+    void waitUntilCompleted(int idx, Func && cleanup) {
+        waitUntilCompleted(idx);
+        cleanup();
+    }
 
     template<typename ... Args>
     void callAndWait(int commandBufferIdx,
@@ -164,9 +170,8 @@ namespace Metal {
                      int ngx, int ngy, int ngz,
                      Args... args) {
         MTL::CommandBuffer * commandBuffer = getCommandBuffer(commandBufferIdx);
-        callNonblock(commandBuffer, function, ntx, nty, ntz, ngx, ngy, ngz, args...);
-        commandBuffer->waitUntilCompleted();
-        commandBuffer->release();
+        queueCall(commandBuffer, function, ntx, nty, ntz, ngx, ngy, ngz, args...);
+        waitUntilCompleted(commandBufferIdx);
     }
 }
 
