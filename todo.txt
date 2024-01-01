@@ -1,0 +1,9 @@
+Why does the first iteration after a prompt has finished take so long?
+Deal with the initial prompt exceding the maxSequenceLength size.
+Deal with exceeding the cacheSize limit.
+Fix the memory leak around the growing scratch buffer size in matmul.cpp
+Calculate bandwidth utilization when seqlen=1 and Gflops when seqlen>1
+Collect statistics on the input to each matrix multiply for finding quantization parameters
+Write matvec kernels for multi-head situation in K^T Q and V * (K^T Q)
+Modify code to deal with the repeated heads in the 34b parameter model
+Clean up the code, get it workable for a third party, write a good README

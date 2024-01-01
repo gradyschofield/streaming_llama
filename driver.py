@@ -29,10 +29,28 @@ if __name__ == "__main__":
     temperature = 0.2
 
     disconnected = False
+    initialInput = None
+    if len(sys.argv) > 1:
+        with open(sys.argv[1], 'r') as file:
+            initialInput = file.read()
     while not disconnected:
-        user_input = input("# ")
-        if user_input == "exit":
-            break
+        if initialInput is None:
+            user_input = input("# ").strip()
+            if user_input == "exit":
+                break
+            if user_input.startswith("from file "):
+                filename = user_input[len("from file "):]
+                if os.path.exists(filename):
+                    with open(filename, 'r') as file:
+                        user_input = file.read()
+                        print(f'Submitting the following prompt from file:\n-------\n{user_input}\n-------\n')
+                else:
+                    print("File not found: {filename}.")
+                    continue
+        else:
+            print(f'Submitting the following prompt:\n-------\n{initialInput}\n-------\n')
+            user_input = initialInput
+            initialInput = None
 
         toks = tokenizer.encode(f"{B_INST}{user_input}{E_INST}",
                                 bos=True,
