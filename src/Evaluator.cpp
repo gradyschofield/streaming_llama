@@ -61,12 +61,12 @@ int main(int argc, char ** argv) {
             numTokens = socket.getInt();
             tokens = socket.getIntArray(numTokens);
         } catch(exception & e) {
-            cout << "Client disconnected" << endl;
+            fout << "Client disconnected" << endl;
             break;
         }
         Timer timer;
         vector<float> logits = model->evaluate(tokens);
-        cout << timer.elapsed()/tokens.size() << " sec per token.  sending back " << logits.size() << " logits" << endl;
+        fout << timer.elapsed()/tokens.size() << " sec per token.  sending back " << logits.size() << " logits" << endl;
         timer.start();
         socket.sendFloatArray(logits);
         socket.sendInt(-1);

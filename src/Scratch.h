@@ -5,7 +5,10 @@
 #ifndef STREAMING_LLAMA_SCRATCH_H
 #define STREAMING_LLAMA_SCRATCH_H
 
+#include<Common.h>
 #include<MetalHelpers.h>
+
+using namespace std;
 
 template<typename T>
 class Scratch {
@@ -25,6 +28,11 @@ public:
               size(leadingDimension * numColumns * sizeof(T)),
               metalBuffer(make_unique<Metal::MetalBuffer>(size))
     {
+        Common::scratchBytesAllocated += size;
+    }
+
+    ~Scratch(){
+        Common::scratchBytesAllocated -= size;
     }
 
     T * getPtr() {

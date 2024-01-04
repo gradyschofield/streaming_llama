@@ -107,7 +107,7 @@ public:
                           shared_ptr<TransformerBlockScratch<T>> transformerBlockScratch,
                           EvaluationTimings & timings) {
         if (layerIdx == 0) {
-            cout << "Num tokens so far: " << currentToken << endl;
+            fout << "Num tokens so far: " << currentToken << endl;
         }
         timings.start("Transformer input layer norm");
         Scratch<T> * inputCopy = transformerBlockScratch->getInputCopyBuffer();

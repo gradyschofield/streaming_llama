@@ -3,14 +3,14 @@
 //
 
 #include<iostream>
+#include<filesystem>
 
-#include<Common.h>
 #include<Socket.h>
+#include<Common.h>
 
 using namespace std;
-using namespace Common;
+namespace fs = std::filesystem;
 
-static ostream & logger = cout;
 
 Socket::Socket()
     : clientSocket(-1), serverSocket(-1)
@@ -19,21 +19,21 @@ Socket::Socket()
 
     serverSocket = socket(AF_UNIX, SOCK_STREAM, 0);
     if (serverSocket == -1) {
-        logger << "Failed to create socket." << endl;
+        fout << "Failed to create socket." << endl;
     }
     memset(&serverAddress, 0, sizeof(serverAddress));
     serverAddress.sun_family = AF_UNIX;
     strncpy(serverAddress.sun_path, socketPath.c_str(), sizeof(serverAddress.sun_path) - 1);
-    if (unlink(socketPath.c_str())) {
-        logger << "Error removing socket path " << strerror(errno) << endl;
+    if (fs::exists(socketPath) && unlink(socketPath.c_str())) {
+        fout << "Error removing socket path " << strerror(errno) << endl;
     }
 
     if (bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) == -1) {
-        logger << "Bind error." << endl;
+        fout << "Bind error." << endl;
     }
 
     if (listen(serverSocket, 1) == -1) {
-        logger << "Listen error." << endl;
+        fout << "Listen error." << endl;
     }
 
     struct sockaddr_un clientAddress;
@@ -41,7 +41,7 @@ Socket::Socket()
     clientAddressSize = sizeof(clientAddress);
     clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressSize);
     if (clientSocket == -1) {
-        logger << "Accept error." << endl;
+        fout << "Accept error." << endl;
     }
 }
 
@@ -58,11 +58,11 @@ vector<int> Socket::getIntArray(int numTokens) {
     for(int i = 0; i < numTokens; ++i) {
         ret[i] = ((int*)buffer.data())[i];
     }
-    logger << "Recieved tokens: ";
+    fout << "Recieved tokens: ";
     for(int i : ret) {
-        logger << i << " ";
+        fout << i << " ";
     }
-    logger << endl;
+    fout << endl;
     return ret;
 }
 
@@ -81,11 +81,11 @@ void Socket::sendInt(int i) {
 
 void Socket::sendFloatArray(vector<float> tokens) {
     /*
-    logger << "Sending floats ";
+    fout << "Sending floats ";
     for(float t : tokens) {
-        logger << t << " ";
+        fout << t << " ";
     }
-    logger << endl;
+    fout << endl;
      */
     sendInt(tokens.size());
     vector<char> buffer(4 * tokens.size());
@@ -102,6 +102,6 @@ Socket::~Socket() {
     if(clientSocket != -1) close(clientSocket);
     if(serverSocket != -1) close(serverSocket);
     if(unlink(socketPath.c_str()) == -1) {
-        logger << "Could not unlink socket file: " << strerror(errno) << endl;
+        fout << "Could not unlink socket file: " << strerror(errno) << endl;
     }
 }

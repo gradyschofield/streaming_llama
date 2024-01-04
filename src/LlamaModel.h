@@ -44,7 +44,7 @@ public:
                shared_ptr<Checker> checker = nullptr)
             : checker(checker)
     {
-        cout << "Loading file " << filename << "\n";
+        fout << "Loading file " << filename << endl;
         fileStorageFormat = readFileStorageFormat(filename);
         map<string, TensorFileInfo> tensorFileInfo = readTensorFileInfoTable(filename);
         llamaModelParams = readParams(filename);
@@ -113,7 +113,7 @@ public:
                                                 1,
                                                 normEps);
         timings.finish("Compute output layer");
-        timings.print(cout);
+        timings.print(fout);
         if(checker) {
             checker->finish();
         }

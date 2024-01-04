@@ -16,6 +16,8 @@
 
 using namespace std;
 
+extern ofstream fout;
+
 namespace Common {
 
     enum FileStorageFormat {
@@ -23,6 +25,8 @@ namespace Common {
         Bf16Aligned,
         Bf16Unaligned
     };
+
+    extern atomic<long> scratchBytesAllocated;
 
     uint8_t fileStorageFormatToInt(FileStorageFormat fileStorageFormat);
     FileStorageFormat intToFileStorageFormat(uint8_t i);

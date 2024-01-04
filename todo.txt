@@ -1,9 +1,23 @@
+Cleanup
+-------
+Fix the memory leak around the growing scratch buffer size in matmul.cpp
+Clean up the code, get it workable for a third party, write a good README
+
+Usability
+---------
 Why does the first iteration after a prompt has finished take so long?
 Deal with the initial prompt exceding the maxSequenceLength size.
 Deal with exceeding the cacheSize limit.
-Fix the memory leak around the growing scratch buffer size in matmul.cpp
+Reevaluate the need to convert the model files twice, or combine into a single step.
+Write performance numbers to a file, use the curses library to display text as it is generated like chatgpt does
+
+Performance
+-----------
 Calculate bandwidth utilization when seqlen=1 and Gflops when seqlen>1
-Collect statistics on the input to each matrix multiply for finding quantization parameters
 Write matvec kernels for multi-head situation in K^T Q and V * (K^T Q)
+It would be good to have a model server that could give the pre-made MetalBuffers to another program since loading takes so long.
+
+New models
+----------
 Modify code to deal with the repeated heads in the 34b parameter model
-Clean up the code, get it workable for a third party, write a good README
+Collect statistics on the input to each matrix multiply for finding quantization parameters

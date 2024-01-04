@@ -48,7 +48,6 @@ public:
                             int w3LeadingDim,
                             int vocabularySize,
                             int numLayers) {
-        size_t totalAlloc = 0;
         ioPtr[0] = make_unique<Scratch<T>>(embeddingLeadingDim, maxSequenceLength);
         ioPtr[1] = make_unique<Scratch<T>>(embeddingLeadingDim, maxSequenceLength);
         inputCopyBuffer = make_unique<Scratch<T>>(embeddingLeadingDim, maxSequenceLength);
@@ -73,7 +72,7 @@ public:
 
         int outLeadingDim = findAlignment(vocabularySize, 64);
         out = make_unique<Scratch<T>>(outLeadingDim, 1);
-        cout << "Allocated " << setprecision(4) << totalAlloc/1E6f << "MB for scratch\n";
+        fout << "Allocated " << setprecision(4) << Common::scratchBytesAllocated/1E6f << "MB for scratch" << endl;
     }
 
     Scratch<T> * takeFreeIoPtr() {

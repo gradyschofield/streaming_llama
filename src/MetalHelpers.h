@@ -5,8 +5,8 @@
 #ifndef STREAMING_LLAMA_METALHELPERS_H
 #define STREAMING_LLAMA_METALHELPERS_H
 
-#include<Metal.hpp>
-#include<Bf16.h>
+#include"Metal.hpp"
+#include"Bf16.h"
 
 #include<iostream>
 #include<string>

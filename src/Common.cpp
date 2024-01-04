@@ -12,6 +12,8 @@
 //ofstream logger("log");
 using namespace std;
 
+ofstream fout = ofstream("fout");
+
 namespace Common {
     uint8_t fileStorageFormatToInt(FileStorageFormat outputFormat) {
         switch(outputFormat) {
@@ -24,6 +26,8 @@ namespace Common {
         }
         return 255; // unreachable
     }
+
+    atomic<long> scratchBytesAllocated = 0;
 
     FileStorageFormat intToFileStorageFormat(uint8_t i) {
         switch(i) {
