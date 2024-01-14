@@ -156,9 +156,11 @@ namespace Metal {
     }
 
     MTL::CommandBuffer * getCommandBuffer(int idx);
+
     void waitUntilCompleted(int idx);
+
     template<typename Func>
-    void waitUntilCompleted(int idx, Func && cleanup) {
+    void waitUntilCompleted(int idx, Func && cleanup = [](){}) {
         waitUntilCompleted(idx);
         cleanup();
     }
