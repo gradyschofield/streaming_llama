@@ -260,22 +260,25 @@ public:
             int outputHeadOffset = head * (currentToken + seqlen);
             timings.start("Key/Query matrix product");
             multiplyMatrices<T>(CblasColMajor, CblasTrans, CblasNoTrans,
-                                   M, N, K,
-                                   1.0,
-                                   &wkOutPtr[inputHeadOffset],
-                                   keyWeights->getLeadingDimension(),
-                                   &wqOutPtr[inputHeadOffset],
-                                   queryWeights->getLeadingDimension(),
-                                   0.0,
-                                   &qkOutPtr[outputHeadOffset],
-                                   qkOutLeadingDim);
+                                M, N, K,
+                                1.0,
+                                &wkOutPtr[inputHeadOffset],
+                                keyWeights->getLeadingDimension(),
+                                &wqOutPtr[inputHeadOffset],
+                                queryWeights->getLeadingDimension(),
+                                0.0,
+                                &qkOutPtr[outputHeadOffset],
+                                qkOutLeadingDim);
             timings.finish("Key/Query matrix product");
-            if(checker) {
+            if (checker) {
                 checker->submitResult(createDataAccessor(&qkOutPtr[outputHeadOffset],
                                                          {(currentToken + seqlen),
                                                           seqlen},
                                                          qkOutLeadingDim));
             }
+        }
+        for(int head = 0; head < numHeads; ++head) {
+            nt outputHeadOffset = head * (currentToken + seqlen);
             //Compute the softmax with masking
             timings.start("Key/Query masking");
             for (int j = 0; j < seqlen; ++j) {

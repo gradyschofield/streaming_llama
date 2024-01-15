@@ -9,7 +9,7 @@ Why does the first iteration after a prompt has finished take so long?
 Deal with the initial prompt exceding the maxSequenceLength size.
 Deal with exceeding the cacheSize limit.
 Reevaluate the need to convert the model files twice, or combine into a single step.
-Write performance numbers to a file, use the curses library to display text as it is generated like chatgpt does
+make curses implementation scrollable
 
 Performance
 -----------
