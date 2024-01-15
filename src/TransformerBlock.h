@@ -278,7 +278,7 @@ public:
             }
         }
         for(int head = 0; head < numHeads; ++head) {
-            nt outputHeadOffset = head * (currentToken + seqlen);
+            int outputHeadOffset = head * (currentToken + seqlen);
             //Compute the softmax with masking
             timings.start("Key/Query masking");
             for (int j = 0; j < seqlen; ++j) {
