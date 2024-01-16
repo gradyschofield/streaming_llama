@@ -23,6 +23,7 @@ class TransformerBlockScratch {
     unique_ptr<Scratch<T>> ioPtr[2];
     unique_ptr<Scratch<T>> inputCopyBuffer;
     unique_ptr<Scratch<T>> wQout;
+    unique_ptr<Scratch<T>> wKoutTmp;
     vector<unique_ptr<Scratch<T>>> wKout;
     vector<unique_ptr<Scratch<T>>> wVout;
     unique_ptr<Scratch<T>> wOout;
@@ -54,8 +55,9 @@ public:
 
         //TODO The heads within each matrix aren't aligned.  Does it even matter?  Some experimentation is needed.
         wQout = make_unique<Scratch<T>>(qLeadingDim, maxSequenceLength);
+        wKoutTmp = make_unique<Scratch<T>>(kLeadingDim, maxSequenceLength);
         for(int i = 0; i < numLayers; ++i) {
-            wKout.push_back(make_unique<Scratch<T>>(kLeadingDim, cacheSize + maxSequenceLength));
+            wKout.push_back(make_unique<Scratch<T>>(cacheSize + maxSequenceLength, kLeadingDim));
             wVout.push_back(make_unique<Scratch<T>>(vLeadingDim, cacheSize + maxSequenceLength));
         }
         wOout = make_unique<Scratch<T>>(oLeadingDim, maxSequenceLength);
@@ -87,6 +89,10 @@ public:
 
     Scratch<T> * getWQout() {
         return wQout.get();
+    }
+
+    Scratch<T> * getWKoutTmp() {
+        return wKoutTmp.get();
     }
 
     Scratch<T> * getWKout(int layerIdx) {

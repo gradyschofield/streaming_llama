@@ -154,8 +154,8 @@ public:
         timings.finish("Transformer Q*embedding matmul");
 
         timings.start("Transformer K*embedding matmul");
-        T* wkOutPtr = transformerBlockScratch->getWKout(layerIdx)->getPtr();
-        int wkOutLeadingDim = transformerBlockScratch->getWKout(layerIdx)->getLeadingDimension();
+        T* wkOutTmpPtr = transformerBlockScratch->getWKoutTmp()->getPtr();
+        int wkOutTmpLeadingDim = transformerBlockScratch->getWKoutTmp()->getLeadingDimension();
         multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                             keyWeights->getNumRows(), seqlen, keyWeights->getNumColumns(),
                             1.0,
@@ -164,9 +164,8 @@ public:
                             inputCopy->getMetalBuffer(),
                             inputCopy->getLeadingDimension(),
                             0.0,
-                            transformerBlockScratch->getWKout(layerIdx)->getMetalBuffer(),
-                            currentToken * wkOutLeadingDim,
-                            wkOutLeadingDim);
+                            transformerBlockScratch->getWKoutTmp()->getMetalBuffer(),
+                            wkOutTmpLeadingDim);
         timings.finish("Transformer K*embedding matmul");
 
         timings.start("Transformer V*embedding matmul");
@@ -187,6 +186,17 @@ public:
 
         timings.start("Waiting on first 3 matmuls");
         Metal::waitUntilCompleted(0, reclaimMatvecBuffers);
+        /*
+         * Transpose wkOut matrix
+         */
+        T* wkOutPtr = transformerBlockScratch->getWKout(layerIdx)->getPtr();
+        int wkOutLeadingDim = transformerBlockScratch->getWKout(layerIdx)->getLeadingDimension();
+        for (int tok = 0; tok < seqlen; ++tok) {
+            for (int i = 0; i < keyWeights->getNumRows(); ++i) {
+                
+            }
+        }
+
         timings.finish("Waiting on first 3 matmuls");
 
         if(checker) {
