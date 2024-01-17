@@ -186,16 +186,6 @@ public:
 
         timings.start("Waiting on first 3 matmuls");
         Metal::waitUntilCompleted(0, reclaimMatvecBuffers);
-        /*
-         * Transpose wkOut matrix
-         */
-        T* wkOutPtr = transformerBlockScratch->getWKout(layerIdx)->getPtr();
-        int wkOutLeadingDim = transformerBlockScratch->getWKout(layerIdx)->getLeadingDimension();
-        for (int tok = 0; tok < seqlen; ++tok) {
-            for (int i = 0; i < keyWeights->getNumRows(); ++i) {
-                
-            }
-        }
 
         timings.finish("Waiting on first 3 matmuls");
 
@@ -208,10 +198,10 @@ public:
                                                      {queryWeights->getNumRows(),
                                                       seqlen},
                                                      wqOutLeadingDim));
-            checker->submitResult(createDataAccessor(&wkOutPtr[currentToken * wkOutLeadingDim],
+            checker->submitResult(createDataAccessor(&wkOutTmpPtr[currentToken * wkOutTmpLeadingDim],
                                                      {keyWeights->getNumRows(),
                                                       seqlen},
-                                                     wkOutLeadingDim));
+                                                     wkOutTmpLeadingDim));
             checker->submitResult(createDataAccessor(&wvOutPtr[currentToken * wvOutLeadingDim],
                                                      {valueWeights->getNumRows(),
                                                       seqlen},
@@ -240,17 +230,28 @@ public:
         };
         timings.start("Rotary embeddings on W*Q and W*K");
         rotaryPositionEmbedding(wqOutPtr, wqOutLeadingDim);
-        rotaryPositionEmbedding(&wkOutPtr[currentToken * wkOutLeadingDim], wkOutLeadingDim);
+        rotaryPositionEmbedding(wkOutTmpPtr, wkOutTmpLeadingDim);
         timings.finish("Rotary embeddings on W*Q and W*K");
         if(checker) {
             checker->submitResult(createDataAccessor(wqOutPtr,
                                                      {queryWeights->getNumRows(),
                                                       seqlen},
                                                      wqOutLeadingDim));
-            checker->submitResult(createDataAccessor(&wkOutPtr[currentToken * wkOutLeadingDim],
+            checker->submitResult(createDataAccessor(wkOutTmpPtr,
                                                      {keyWeights->getNumRows(),
                                                       seqlen},
-                                                     wkOutLeadingDim));
+                                                     wkOutTmpLeadingDim));
+        }
+
+        /*
+         * Transpose wkOut matrix
+         */
+        T* wkOutPtr = transformerBlockScratch->getWKout(layerIdx)->getPtr();
+        int wkOutLeadingDim = transformerBlockScratch->getWKout(layerIdx)->getLeadingDimension();
+        for (int tok = 0; tok < seqlen; ++tok) {
+            for (int i = 0; i < keyWeights->getNumRows(); ++i) {
+                wkOutPtr[tok + currentToken + i * wkOutLeadingDim] = wkOutTmpPtr[i + tok * wkOutTmpLeadingDim];
+            }
         }
 
         /*
@@ -269,11 +270,11 @@ public:
             int inputHeadOffset = head * headDimension;
             int outputHeadOffset = head * (currentToken + seqlen);
             timings.start("Key/Query matrix product");
-            multiplyMatrices<T>(CblasColMajor, CblasTrans, CblasNoTrans,
+            multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                 M, N, K,
                                 1.0,
-                                &wkOutPtr[inputHeadOffset],
-                                keyWeights->getLeadingDimension(),
+                                &wkOutPtr[head * headDimension * wkOutLeadingDim],
+                                wkOutLeadingDim,
                                 &wqOutPtr[inputHeadOffset],
                                 queryWeights->getLeadingDimension(),
                                 0.0,
