@@ -262,33 +262,21 @@ public:
          * We are asking for a transpose on a horizontal band of K, not K itself.
          * Imagine the output matrix as numHeads vertically stacked blocks of (cacheSize + seqlen) x seqlen
          */
-        multiheadMatvec( transformerBlockScratch->getWKout(layerIdx),
+        timings.start("Key/Query matrix product");
+        multiheadMatvec(transformerBlockScratch->getWKout(layerIdx),
                         transformerBlockScratch->getWQout(),
                         transformerBlockScratch->getQKout(),
                         //stripDimGroups, move to helper
-                        headDimension, numHeads, currentToken, seqlen, wkOutLeadingDim);
+                        headDimension, numHeads, currentToken, seqlen);
+        timings.finish("Key/Query matrix product");
+
         Scratch<T> * qkOut = transformerBlockScratch->getQKout();
         T * qkOutPtr = qkOut->getPtr();
         int qkOutLeadingDim = qkOut->getLeadingDimension();
-        for(int head = 0; head < numHeads; ++head) {
-            int M = currentToken + seqlen;
-            int N = seqlen;
-            int K = headDimension;
-            int inputHeadOffset = head * headDimension;
-            int outputHeadOffset = head * (currentToken + seqlen);
-            timings.start("Key/Query matrix product");
-            multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                                M, N, K,
-                                1.0,
-                                &wkOutPtr[head * headDimension * wkOutLeadingDim],
-                                wkOutLeadingDim,
-                                &wqOutPtr[inputHeadOffset],
-                                queryWeights->getLeadingDimension(),
-                                0.0,
-                                &qkOutPtr[outputHeadOffset],
-                                qkOutLeadingDim);
-            timings.finish("Key/Query matrix product");
-            if (checker) {
+        if (checker) {
+            for(int head = 0; head < numHeads; ++head) {
+                Metal::waitUntilCompleted(0);
+                int outputHeadOffset = head * (currentToken + seqlen);
                 checker->submitResult(createDataAccessor(&qkOutPtr[outputHeadOffset],
                                                          {(currentToken + seqlen),
                                                           seqlen},

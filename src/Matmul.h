@@ -5,14 +5,11 @@
 #ifndef STREAMING_LLAMA_MATMUL_H
 #define STREAMING_LLAMA_MATMUL_H
 
-#ifdef __APPLE__
 #include<Accelerate/Accelerate.h>
-#else
-#include<mkl.h>
-#endif
 
 #include<Common.h>
 #include<Metal.hpp>
+#include<Scratch.h>
 
 using namespace Common;
 
@@ -60,16 +57,19 @@ void multiplyMatrices(const enum CBLAS_ORDER ORDER,
 }
 
 template<typename T>
-void multiheadMatvec(Scratch<T> & mat,
-                     MTL::Buffer * in,
-                     MTL::Buffer * out,
+void multiheadMatvec(Scratch<T> * wkOut,
+                     Scratch<T> * wqOut,
+                     Scratch<T> * qkOut,
                      long headDimension,
                      long numHeads,
                      long currentToken,
-                     long seqlen,
-                     long leadingDimension) {
-    if (seqlen > 1) {
-        Scratch<T> * qkOut = transformerBlockScratch->getQKout();
+                     long seqlen) {
+    //if (seqlen > 1) {
+    if (true) {
+        T* wkOutPtr = wkOut->getPtr();
+        int wkOutLeadingDim = wkOut->getLeadingDimension();
+        T* wqOutPtr = wqOut->getPtr();
+        int wqOutLeadingDim = wqOut->getLeadingDimension();
         T * qkOutPtr = qkOut->getPtr();
         int qkOutLeadingDim = qkOut->getLeadingDimension();
         for(int head = 0; head < numHeads; ++head) {
@@ -78,27 +78,21 @@ void multiheadMatvec(Scratch<T> & mat,
             int K = headDimension;
             int inputHeadOffset = head * headDimension;
             int outputHeadOffset = head * (currentToken + seqlen);
-            timings.start("Key/Query matrix product");
             multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
                                 M, N, K,
                                 1.0,
                                 &wkOutPtr[head * headDimension * wkOutLeadingDim],
                                 wkOutLeadingDim,
                                 &wqOutPtr[inputHeadOffset],
-                                queryWeights->getLeadingDimension(),
+                                wqOutLeadingDim,
                                 0.0,
                                 &qkOutPtr[outputHeadOffset],
                                 qkOutLeadingDim);
-            timings.finish("Key/Query matrix product");
-            if (checker) {
-                checker->submitResult(createDataAccessor(&qkOutPtr[outputHeadOffset],
-                                                         {(currentToken + seqlen),
-                                                          seqlen},
-                                                         qkOutLeadingDim));
-            }
         }
+    } else {
+        long numRows = currentToken + seqlen;
+        long leadingDimension = wkOut->getLeadingDimension();
     }
-    long numRows = currentToken + seqlen;
 }
 void reclaimMatvecBuffers();
 
