@@ -59,6 +59,47 @@ void multiplyMatrices(const enum CBLAS_ORDER ORDER,
     }
 }
 
+template<typename T>
+void multiheadMatvec(Scratch<T> & mat,
+                     MTL::Buffer * in,
+                     MTL::Buffer * out,
+                     long headDimension,
+                     long numHeads,
+                     long currentToken,
+                     long seqlen,
+                     long leadingDimension) {
+    if (seqlen > 1) {
+        Scratch<T> * qkOut = transformerBlockScratch->getQKout();
+        T * qkOutPtr = qkOut->getPtr();
+        int qkOutLeadingDim = qkOut->getLeadingDimension();
+        for(int head = 0; head < numHeads; ++head) {
+            int M = currentToken + seqlen;
+            int N = seqlen;
+            int K = headDimension;
+            int inputHeadOffset = head * headDimension;
+            int outputHeadOffset = head * (currentToken + seqlen);
+            timings.start("Key/Query matrix product");
+            multiplyMatrices<T>(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                                M, N, K,
+                                1.0,
+                                &wkOutPtr[head * headDimension * wkOutLeadingDim],
+                                wkOutLeadingDim,
+                                &wqOutPtr[inputHeadOffset],
+                                queryWeights->getLeadingDimension(),
+                                0.0,
+                                &qkOutPtr[outputHeadOffset],
+                                qkOutLeadingDim);
+            timings.finish("Key/Query matrix product");
+            if (checker) {
+                checker->submitResult(createDataAccessor(&qkOutPtr[outputHeadOffset],
+                                                         {(currentToken + seqlen),
+                                                          seqlen},
+                                                         qkOutLeadingDim));
+            }
+        }
+    }
+    long numRows = currentToken + seqlen;
+}
 void reclaimMatvecBuffers();
 
 #endif //STREAMING_LLAMA_MATMUL_H

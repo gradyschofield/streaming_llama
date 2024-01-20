@@ -262,6 +262,11 @@ public:
          * We are asking for a transpose on a horizontal band of K, not K itself.
          * Imagine the output matrix as numHeads vertically stacked blocks of (cacheSize + seqlen) x seqlen
          */
+        multiheadMatvec( transformerBlockScratch->getWKout(layerIdx),
+                        transformerBlockScratch->getWQout(),
+                        transformerBlockScratch->getQKout(),
+                        //stripDimGroups, move to helper
+                        headDimension, numHeads, currentToken, seqlen, wkOutLeadingDim);
         Scratch<T> * qkOut = transformerBlockScratch->getQKout();
         T * qkOutPtr = qkOut->getPtr();
         int qkOutLeadingDim = qkOut->getLeadingDimension();
