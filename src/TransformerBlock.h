@@ -246,6 +246,7 @@ public:
         /*
          * Transpose wkOut matrix
          */
+        timings.start("Wk transpose");
         T* wkOutPtr = transformerBlockScratch->getWKout(layerIdx)->getPtr();
         int wkOutLeadingDim = transformerBlockScratch->getWKout(layerIdx)->getLeadingDimension();
         for (int tok = 0; tok < seqlen; ++tok) {
@@ -253,6 +254,7 @@ public:
                 wkOutPtr[tok + currentToken + i * wkOutLeadingDim] = wkOutTmpPtr[i + tok * wkOutTmpLeadingDim];
             }
         }
+        timings.finish("Wk transpose");
 
         /*
          * Compute K^T * Q for each head of the attention mechanism
