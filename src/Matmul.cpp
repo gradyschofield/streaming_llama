@@ -243,7 +243,7 @@ void multiplyMatrices<Bf16>(const enum CBLAS_ORDER ORDER,
                             const int LDC) {
     int aNumRows = TRANSA == CblasTrans ? K : M;
     int aNumCols = TRANSA == CblasTrans ? M : K;
-    if (N > 1 || TRANSA == CblasTrans) {
+    if (N > 1 || TRANSA == CblasTrans || LDA != M || LDB != K || LDC != M) {
         ScratchBuffer aScratch = getScratch(aNumRows, aNumCols);
         ScratchBuffer bScratch = getScratch(K, N);
         ScratchBuffer cScratch = getScratch(M, N);

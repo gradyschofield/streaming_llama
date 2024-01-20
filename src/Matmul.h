@@ -33,7 +33,7 @@ void multiplyMatrices(const enum CBLAS_ORDER ORDER,
                       const int K, const T ALPHA, MTL::Buffer * A, const int LDA,
                       MTL::Buffer * B, const int LDB, const T BETA, MTL::Buffer * C,
                       const int LDC) {
-    if (N > 1 || TRANSA == CblasTrans) {
+    if (N > 1 || TRANSA == CblasTrans || LDA != M || LDB != K || LDC != M) {
         multiplyMatrices(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, (T const *) A->contents(), LDA,
                          (T const *) B->contents(), LDB, BETA, (T *) C->contents(), LDC);
     } else {
@@ -50,7 +50,7 @@ void multiplyMatrices(const enum CBLAS_ORDER ORDER,
                       MTL::Buffer * B, const int LDB, const T BETA, MTL::Buffer * C,
                       const long outputOffsetElements,
                       const int LDC) {
-    if (N > 1 || TRANSA == CblasTrans) {
+    if (N > 1 || TRANSA == CblasTrans || LDA != M || LDB != K || LDC != M) {
         multiplyMatrices(ORDER, TRANSA, TRANSB, M, N, K, ALPHA, (T const *) A->contents(), LDA,
                          (T const *) B->contents(), LDB, BETA, ((T *)C->contents()) + outputOffsetElements, LDC);
     } else {

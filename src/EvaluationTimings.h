@@ -21,14 +21,10 @@ public:
         timespec t;
         if (iter == end(times)) {
             appearanceOrder.push_back(name);
-            timespec & out = currentTime[name];
-            clock_gettime(CLOCK_REALTIME, &t);
-            out = t;
-        } else {
-            timespec & out = currentTime[name];
-            clock_gettime(CLOCK_REALTIME, &t);
-            out = t;
         }
+        timespec & out = currentTime[name];
+        clock_gettime(CLOCK_REALTIME, &t);
+        out = t;
     }
 
     void finish(char const * name) {
@@ -46,6 +42,15 @@ public:
         for (char const * s : appearanceOrder) {
             os << s << " " << times[s] / (double)totalTime << endl;
         }
+        /*
+        os << "absolute times: " << endl;
+        for (char const * s : appearanceOrder) {
+            os << s << " " << times[s] / 1E9 << endl;
+        }
+         */
+        appearanceOrder.clear();
+        times.clear();
+        currentTime.clear();
     }
 };
 
