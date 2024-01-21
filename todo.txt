@@ -1,3 +1,14 @@
+Short term
+----------
+setup conda on macpro
+run models on macpro
+Get multiheadMatvec into model eval code
+Write metal code for the value * qk product
+write metal code for the masking
+q*k, masking, v*q*k and wo * vqk can all be submitted before a wait is necessary.
+    if there is a metal memcpy for wo*vqk, then that, a layer norm and two matmul for the FFN can all happen too before the wait
+
+
 Cleanup
 -------
 Fix the memory leak around the growing scratch buffer size in matmul.cpp

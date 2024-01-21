@@ -65,7 +65,7 @@ def main(stdscr):
         os.remove(socketPath)
     evaluator = subprocess.Popen("release/evaluator")
 
-    tokenizer_path='/Users/grady/src/codellama/CodeLlama-7b-Instruct/tokenizer.model'
+    tokenizer_path='codellama/tokenizer_7b_13b.model'
     tokenizer = Tokenizer(model_path=tokenizer_path)
 
     socket = Socket()

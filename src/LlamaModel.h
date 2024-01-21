@@ -6,6 +6,7 @@
 #define STREAMING_LLAMA_LLAMAMODEL_H
 
 #include<memory>
+#include<thread>
 #include<vector>
 
 #include<Bf16.h>
@@ -65,16 +66,23 @@ public:
                         layerCount);
         tensorFile = open(filename.c_str(), O_RDONLY);
         nonTransformerWeights = make_unique<NonTransformerWeights<T>>(tensorFileInfo, tensorFile, checker);
+        transformerBlocks.resize(layerCount);
+        vector<thread> threads;
         for(int i = 0; i < layerCount; ++i) {
-            transformerBlocks.push_back(make_unique<TransformerBlock<T>>(
-                    i,
-                    tensorFileInfo,
-                    tensorFile,
-                    normEps,
-                    nonTransformerWeights->getRopeFreqPtr(),
-                    llamaModelParams.numHeads,
-                    unmapWeights,
-                    checker));
+            threads.emplace_back([&,i](unique_ptr<TransformerBlock<T>> * p) {
+                p->reset( new TransformerBlock<T> (
+                        i,
+                                tensorFileInfo,
+                                tensorFile,
+                                normEps,
+                                nonTransformerWeights->getRopeFreqPtr(),
+                                llamaModelParams.numHeads,
+                                unmapWeights,
+                                checker));
+            }, &transformerBlocks[i]);
+        }
+        for(int i = 0; i < layerCount; ++i) {
+            threads[i].join();
         }
     }
 
