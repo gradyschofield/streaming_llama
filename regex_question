@@ -1,0 +1,7 @@
+Can you write a C++ function using regular expressions that processes time ranges in the formats demonstrated below and returns a pair that contains the start and stop time of the range as a unix timestamp?  There are three types of formats.
+
+Examples of the first format are "Jan 2010 to Mar 2015", "Jul 2003 to Sep 2007", and "Feb 1987 to Oct 1999".  I also want for the month token to be optional.  So "2003 to Sep 2007" or "Jul 2005 to 2013" is also valid.
+
+Examples of the second format are "10 years", "2 years", "2 months", "1 year", "1 month", "1 day", and "5 days".  In this case, the end time is the current day and the string represents the how far back to go to find the start time.
+
+Finally, examples of the last format are "3 years to 2 years", "1 year to 5 days", "10 years to 1 year", "1 month to 15 days".  In this case, the start and end time are computed using the current day as a reference point and looking backward, similar to the second format, but both the start and end time are specified, similar to the first format.
