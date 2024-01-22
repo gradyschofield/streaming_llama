@@ -22,6 +22,8 @@ void multiplyMatrices(const enum CBLAS_ORDER ORDER,
                       const int LDC);
 
 void matvec(MTL::Buffer * mat, MTL::Buffer * in, MTL::Buffer * out, long numRows, long numCols, long outputOffsetElements = 0);
+void multiheadMatvec(MTL::Buffer * mat, MTL::Buffer * in, MTL::Buffer * out,
+                     long headDimension, long numHeads, long numRows, long leadingDimension);
 
 template<typename T>
 void multiplyMatrices(const enum CBLAS_ORDER ORDER,
@@ -92,6 +94,13 @@ void multiheadMatvec(Scratch<T> * wkOut,
     } else {
         long numRows = currentToken + seqlen;
         long leadingDimension = wkOut->getLeadingDimension();
+        multiheadMatvec(wkOut->getMetalBuffer(),
+                        wqOut->getMetalBuffer(),
+                        qkOut->getMetalBuffer(),
+                        headDimension,
+                        numHeads,
+                        numRows,
+                        leadingDimension);
     }
 }
 void reclaimMatvecBuffers();
