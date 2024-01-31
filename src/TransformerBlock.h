@@ -256,12 +256,6 @@ public:
         }
         timings.finish("Wk transpose");
 
-        /*
-         * Compute K^T * Q for each head of the attention mechanism
-         * We are stepping through horizontal bands of each of K, Q and the output matrix.
-         * We are asking for a transpose on a horizontal band of K, not K itself.
-         * Imagine the output matrix as numHeads vertically stacked blocks of (cacheSize + seqlen) x seqlen
-         */
         timings.start("Key/Query matrix product");
         multiheadMatvec(transformerBlockScratch->getWKout(layerIdx),
                         transformerBlockScratch->getWQout(),

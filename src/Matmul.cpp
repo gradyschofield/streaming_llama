@@ -481,13 +481,13 @@ void cleanupMultiheadMatvecPass() {
     inUseMultiheadMatvecBuffers.clear();
 }
 
-void multiheadMatvec(MTL::Buffer * mat,
-                     MTL::Buffer * in,
-                     MTL::Buffer * out,
-                     long headDimension,
-                     long numHeads,
-                     long numRows,
-                     long leadingDimension) {
+void multiheadMatvecMetal(MTL::Buffer * mat,
+                          MTL::Buffer * in,
+                          MTL::Buffer * out,
+                          long headDimension,
+                          long numHeads,
+                          long numRows,
+                          long leadingDimension) {
 
     if (!multiheadMatvecFunc) {
         initMultiheadMatvec();

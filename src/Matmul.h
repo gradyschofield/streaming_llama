@@ -22,8 +22,8 @@ void multiplyMatrices(const enum CBLAS_ORDER ORDER,
                       const int LDC);
 
 void matvec(MTL::Buffer * mat, MTL::Buffer * in, MTL::Buffer * out, long numRows, long numCols, long outputOffsetElements = 0);
-void multiheadMatvec(MTL::Buffer * mat, MTL::Buffer * in, MTL::Buffer * out,
-                     long headDimension, long numHeads, long numRows, long leadingDimension);
+void multiheadMatvecMetal(MTL::Buffer * mat, MTL::Buffer * in, MTL::Buffer * out,
+                          long headDimension, long numHeads, long numRows, long leadingDimension);
 
 template<typename T>
 void multiplyMatrices(const enum CBLAS_ORDER ORDER,
@@ -66,8 +66,14 @@ void multiheadMatvec(Scratch<T> * wkOut,
                      long numHeads,
                      long currentToken,
                      long seqlen) {
-    //if (seqlen > 1) {
-    if (true) {
+    /*
+     * Compute K^T * Q for each head of the attention mechanism
+     * We are stepping through horizontal bands of each of K, Q and the output matrix.
+     * We are asking for a transpose on a horizontal band of K, not K itself.
+     * Imagine the output matrix as numHeads vertically stacked blocks of (cacheSize + seqlen) x seqlen
+     */
+    if (seqlen > 1) {
+    //if (true) {
         T* wkOutPtr = wkOut->getPtr();
         int wkOutLeadingDim = wkOut->getLeadingDimension();
         T* wqOutPtr = wqOut->getPtr();
@@ -94,13 +100,13 @@ void multiheadMatvec(Scratch<T> * wkOut,
     } else {
         long numRows = currentToken + seqlen;
         long leadingDimension = wkOut->getLeadingDimension();
-        multiheadMatvec(wkOut->getMetalBuffer(),
-                        wqOut->getMetalBuffer(),
-                        qkOut->getMetalBuffer(),
-                        headDimension,
-                        numHeads,
-                        numRows,
-                        leadingDimension);
+        multiheadMatvecMetal(wkOut->getMetalBuffer(),
+                             wqOut->getMetalBuffer(),
+                             qkOut->getMetalBuffer(),
+                             headDimension,
+                             numHeads,
+                             numRows,
+                             leadingDimension);
     }
 }
 void reclaimMatvecBuffers();
