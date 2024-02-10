@@ -400,6 +400,7 @@ void reclaimMatvecBuffers() {
 }
 
 Metal::Function * multiheadMatvecFunc = nullptr;
+Metal::Function * multiheadMatvecScalarFunc = nullptr;
 Metal::Function * multiheadReducerFunc = nullptr;
 
 void initMultiheadMatvec() {
@@ -417,14 +418,15 @@ void initMultiheadMatvec() {
                                         device float4 * result [[buffer(2)]],
                                         constant int64_t & headDimension [[buffer(3)]],
                                         constant int64_t & numHeads [[buffer(4)]],
-                                        constant int64_t & numRows [[buffer(5)]],
-                                        constant int64_t & leadingDimension [[buffer(6)]],
+                                        constant int64_t & leadingDimension [[buffer(5)]],
+                                        constant int64_t & numCompletedRows [[buffer(6)]],
                                         uint2 threadPos [[thread_position_in_threadgroup]],
                                         uint2 threadDim [[threads_per_threadgroup]],
                                         uint2 groupPos [[threadgroup_position_in_grid]],
                                         uint2 groupDim [[threadgroups_per_grid]] ) {
                 int64_t leadingDimension_4 = leadingDimension >> 2;
-                int64_t threadRowOffset = threadPos.x + groupPos.x * threadDim.x;
+                int64_t numCompletedRows_4 = numCompletedRows >> 2;
+                int64_t threadRowOffset = numCompletedRows_4 + threadPos.x + groupPos.x * threadDim.x;
                 uint headOffset = 0;
                 for (uint head = 0; head < numHeads; ++head) {
                     float4 t = 0;
@@ -439,13 +441,48 @@ void initMultiheadMatvec() {
             }
         )";
 
+    static string matvecSrcScalar = R"(
+            #include <metal_stdlib>
+            using namespace metal;
+
+            /*
+             *  This requires the key matrix has been transposed
+             *  groupDim.y needs to divide headDimension
+             *
+             */
+            kernel void singleColumnMatvecScalar(device const bfloat * mat [[buffer(0)]],
+                                        device const bfloat * vec [[buffer(1)]],
+                                        device float * result [[buffer(2)]],
+                                        constant int64_t & headDimension [[buffer(3)]],
+                                        constant int64_t & numHeads [[buffer(4)]],
+                                        constant int64_t & leadingDimension [[buffer(5)]],
+                                        constant int64_t & numCompletedRows [[buffer(6)]],
+                                        uint2 threadPos [[thread_position_in_threadgroup]],
+                                        uint2 threadDim [[threads_per_threadgroup]],
+                                        uint2 groupPos [[threadgroup_position_in_grid]],
+                                        uint2 groupDim [[threadgroups_per_grid]] ) {
+                int64_t threadRowOffset = numCompletedRows + threadPos.x + groupPos.x * threadDim.x;
+                uint headOffset = 0;
+                for (uint head = 0; head < numHeads; ++head) {
+                    float t = 0;
+                    for (uint h = 0; h < headDimension; h+=groupDim.y) {
+                        uint hIdx = h + headOffset;
+                        t += static_cast<float>(mat[threadRowOffset + (hIdx+groupPos.y) * leadingDimension] *
+                            vec[hIdx+groupPos.y]);
+                    }
+                    headOffset += headDimension;
+                    result[threadRowOffset + groupPos.y * leadingDimension + head * groupDim.y * leadingDimension] = t;
+                }
+            }
+        )";
+
     static string reducerSrc = R"(
             #include <metal_stdlib>
             using namespace metal;
 
             kernel void singleColumnMatvecReducer(
-                        device float4 * input [[buffer(0)]],
-                        device bfloat4 * result [[buffer(1)]],
+                        device float * input [[buffer(0)]],
+                        device bfloat * result [[buffer(1)]],
                         constant int64_t & numTemporaries [[buffer(2)]],
                         constant int64_t & numHeads [[buffer(3)]],
                         constant int64_t & numRows [[buffer(4)]],
@@ -454,20 +491,21 @@ void initMultiheadMatvec() {
                         uint2 threadDim [[threads_per_threadgroup]],
                         uint2 groupPos [[threadgroup_position_in_grid]],
                         uint2 groupDim [[threadgroups_per_grid]] ) {
-                int64_t leadingDimension_4 = leadingDimension >> 2;
-                int64_t numRows_4 = numRows >> 2;
                 int64_t threadRowOffset = threadPos.x + groupPos.x * threadDim.x;
-                for (uint head = 0; head < numHeads; ++head) {
-                    float4 t = 0;
-                    for (uint j = 0; j < numTemporaries; ++j) {
-                        t += input[threadRowOffset + j * leadingDimension_4 + head * numTemporaries * leadingDimension_4];
+                if (threadRowOffset < numRows) {
+                    for (uint head = 0; head < numHeads; ++head) {
+                        float t = 0;
+                        for (uint j = 0; j < numTemporaries; ++j) {
+                            t += input[threadRowOffset + j * leadingDimension + head * numTemporaries * leadingDimension];
+                        }
+                        result[threadRowOffset + head * numRows] = static_cast<bfloat>(t);
                     }
-                    result[threadRowOffset + head * numRows_4] = static_cast<bfloat4>(t);
                 }
             }
         )";
 
     multiheadMatvecFunc = Metal::getFunction(matvecSrc, "singleColumnMatvec");
+    multiheadMatvecScalarFunc = Metal::getFunction(matvecSrcScalar, "singleColumnMatvecScalar");
     multiheadReducerFunc = Metal::getFunction(reducerSrc, "singleColumnMatvecReducer");
 }
 
@@ -495,7 +533,7 @@ void multiheadMatvecMetal(MTL::Buffer * mat,
 
     long stripDimGroups = 8;
 
-    tuple<int, int> tmpKey = make_tuple(numRows, stripDimGroups);
+    tuple<int, int> tmpKey = make_tuple(leadingDimension, stripDimGroups);
     auto iter = freeMultiheadMatvecBuffers.find(tmpKey);
     MTL::Buffer * tmpBuffer;
     if (iter == end(freeMultiheadMatvecBuffers)) {
@@ -506,20 +544,41 @@ void multiheadMatvecMetal(MTL::Buffer * mat,
     }
     inUseMultiheadMatvecBuffers.emplace(tmpKey, tmpBuffer);
 
-    long stripLength = 32;
-
-    long rowGroups = numRows / (stripLength * 4);
-
     MTL::CommandBuffer * commandBuffer = Metal::getCommandBuffer(0);
-    Metal::queueCall(commandBuffer, *multiheadMatvecFunc,
-                     stripLength, 1, 1,
-                     rowGroups, stripDimGroups, 1,
-                     mat, in, tmpBuffer,
-                     headDimension, numHeads, numRows, leadingDimension);
+    long numRowsLeft = numRows;
+    long numCompletedRows = 0;
+    for (long stripLength : vector<long>{16}){ //}, 8, 4, 2, 1}) {
+        if (numRowsLeft >= stripLength * 4) {
+            long rowGroups = numRowsLeft / (stripLength * 4);
+
+            Metal::queueCall(commandBuffer, *multiheadMatvecFunc,
+                             stripLength, 1, 1,
+                             rowGroups, stripDimGroups, 1,
+                             mat, in, tmpBuffer,
+                             headDimension, numHeads, leadingDimension, numCompletedRows);
+
+            long numRowsProcessed = rowGroups * stripLength * 4;
+            numCompletedRows += numRowsProcessed;
+            numRowsLeft -= numRowsProcessed;
+        }
+    }
+
+    if (numRowsLeft > 0) {
+        Metal::queueCall(commandBuffer, *multiheadMatvecScalarFunc,
+                         numRowsLeft, 1, 1,
+                         1, stripDimGroups, 1,
+                         mat, in, tmpBuffer,
+                         headDimension, numHeads, leadingDimension, numCompletedRows);
+        numCompletedRows += numRowsLeft;
+        numRowsLeft = 0;
+    }
+
+    int reducerStripLength = 32;
+    int reducerNumGroups = numRows / reducerStripLength + (numRows % reducerStripLength == 0 ? 0 : 1);
 
     Metal::queueCall(commandBuffer, *multiheadReducerFunc,
-                     stripLength, 1, 1,
-                     rowGroups, 1, 1,
+                     reducerStripLength, 1, 1,
+                     reducerNumGroups, 1, 1,
                      tmpBuffer, out,
                      stripDimGroups, numHeads, numRows, leadingDimension);
 
