@@ -260,7 +260,6 @@ public:
         multiheadMatvec(transformerBlockScratch->getWKout(layerIdx),
                         transformerBlockScratch->getWQout(),
                         transformerBlockScratch->getQKout(),
-                        //stripDimGroups, move to helper
                         headDimension, numHeads, currentToken, seqlen);
         timings.finish("Key/Query matrix product");
 

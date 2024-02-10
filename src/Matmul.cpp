@@ -413,7 +413,7 @@ void initMultiheadMatvec() {
              *  groupDim.y needs to divide headDimension
              *
              */
-            kernel void singleColumnMatvec(device const bfloat4 * mat [[buffer(0)]],
+            kernel void qkMatvec(device const bfloat4 * mat [[buffer(0)]],
                                         device const bfloat * vec [[buffer(1)]],
                                         device float4 * result [[buffer(2)]],
                                         constant int64_t & headDimension [[buffer(3)]],
@@ -450,7 +450,7 @@ void initMultiheadMatvec() {
              *  groupDim.y needs to divide headDimension
              *
              */
-            kernel void singleColumnMatvecScalar(device const bfloat * mat [[buffer(0)]],
+            kernel void qkMatvecScalar(device const bfloat * mat [[buffer(0)]],
                                         device const bfloat * vec [[buffer(1)]],
                                         device float * result [[buffer(2)]],
                                         constant int64_t & headDimension [[buffer(3)]],
@@ -480,7 +480,7 @@ void initMultiheadMatvec() {
             #include <metal_stdlib>
             using namespace metal;
 
-            kernel void singleColumnMatvecReducer(
+            kernel void qkMatvecReducer(
                         device float * input [[buffer(0)]],
                         device bfloat * result [[buffer(1)]],
                         constant int64_t & numTemporaries [[buffer(2)]],
@@ -504,9 +504,9 @@ void initMultiheadMatvec() {
             }
         )";
 
-    multiheadMatvecFunc = Metal::getFunction(matvecSrc, "singleColumnMatvec");
-    multiheadMatvecScalarFunc = Metal::getFunction(matvecSrcScalar, "singleColumnMatvecScalar");
-    multiheadReducerFunc = Metal::getFunction(reducerSrc, "singleColumnMatvecReducer");
+    multiheadMatvecFunc = Metal::getFunction(matvecSrc, "qkMatvec");
+    multiheadMatvecScalarFunc = Metal::getFunction(matvecSrcScalar, "qkMatvecScalar");
+    multiheadReducerFunc = Metal::getFunction(reducerSrc, "qkMatvecReducer");
 }
 
 multimap<pair<int, int>, MTL::Buffer * > inUseMultiheadMatvecBuffers;
@@ -547,6 +547,7 @@ void multiheadMatvecMetal(MTL::Buffer * mat,
     MTL::CommandBuffer * commandBuffer = Metal::getCommandBuffer(0);
     long numRowsLeft = numRows;
     long numCompletedRows = 0;
+
     for (long stripLength : vector<long>{16}){ //}, 8, 4, 2, 1}) {
         if (numRowsLeft >= stripLength * 4) {
             long rowGroups = numRowsLeft / (stripLength * 4);
