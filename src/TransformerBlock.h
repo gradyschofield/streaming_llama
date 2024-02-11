@@ -9,9 +9,12 @@
 #include<sys/mman.h>
 #include<fcntl.h>
 
+#include<cmath>
+
 #include<Checker.h>
 #include<Common.h>
 #include<LayerNormalization.h>
+#include<Masking.h>
 #include<Matmul.h>
 #include<Scratch.h>
 #include<TransformerBlockScratch.h>
@@ -277,6 +280,8 @@ public:
             }
         }
         timings.start("Key/Query masking");
+        Masking::maskQkProduct(qkOut, headDimension, numHeads, currentToken, seqlen);
+        /*
         for(int head = 0; head < numHeads; ++head) {
             int outputHeadOffset = head * (currentToken + seqlen);
             //Compute the softmax with masking
@@ -304,6 +309,7 @@ public:
                 }
             }
         }
+         */
         timings.finish("Key/Query masking");
         if(checker) {
             checker->submitResult(createDataAccessor(qkOutPtr,

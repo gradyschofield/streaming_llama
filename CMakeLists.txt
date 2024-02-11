@@ -27,6 +27,7 @@ set(SRC
         src/Exception.h
         src/LlamaModel.h
         src/LayerNormalization.h
+        src/Masking.h
         src/Matmul.cpp
         src/Matmul.h
         src/Metal.hpp

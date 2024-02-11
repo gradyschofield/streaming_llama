@@ -73,7 +73,6 @@ void multiheadMatvec(Scratch<T> * wkOut,
      * Imagine the output matrix as numHeads vertically stacked blocks of (cacheSize + seqlen) x seqlen
      */
     if (seqlen > 1) {
-   // if (true) {
         T* wkOutPtr = wkOut->getPtr();
         int wkOutLeadingDim = wkOut->getLeadingDimension();
         T* wqOutPtr = wqOut->getPtr();
