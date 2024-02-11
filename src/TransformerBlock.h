@@ -276,10 +276,10 @@ public:
                                                          qkOutLeadingDim));
             }
         }
+        timings.start("Key/Query masking");
         for(int head = 0; head < numHeads; ++head) {
             int outputHeadOffset = head * (currentToken + seqlen);
             //Compute the softmax with masking
-            timings.start("Key/Query masking");
             for (int j = 0; j < seqlen; ++j) {
                 for (int i = currentToken + j + 1; i < currentToken + seqlen; ++i) {
                     qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] = -numeric_limits<float>::infinity();
@@ -303,8 +303,8 @@ public:
                     qkOutPtr[outputHeadOffset + i + j * qkOutLeadingDim] = term * normalizer;
                 }
             }
-            timings.finish("Key/Query masking");
         }
+        timings.finish("Key/Query masking");
         if(checker) {
             checker->submitResult(createDataAccessor(qkOutPtr,
                                                      {numHeads * (currentToken + seqlen),
