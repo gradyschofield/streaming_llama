@@ -583,7 +583,8 @@ void multiheadMatvecMetal(MTL::Buffer * mat,
                      tmpBuffer, out,
                      stripDimGroups, numHeads, numRows, leadingDimension);
 
-    Metal::waitUntilCompleted(0, cleanupMultiheadMatvecPass);
+    //The wait will happen later
+    //Metal::waitUntilCompleted(0, cleanupMultiheadMatvecPass);
 }
 
 /*

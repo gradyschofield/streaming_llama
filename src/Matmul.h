@@ -109,5 +109,6 @@ void multiheadMatvec(Scratch<T> * wkOut,
     }
 }
 void reclaimMatvecBuffers();
+void cleanupMultiheadMatvecPass();
 
 #endif //STREAMING_LLAMA_MATMUL_H
